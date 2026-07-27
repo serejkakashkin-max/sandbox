@@ -1,0 +1,17 @@
+.venv/
+.env
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.vscode/
+.idea/
+__MACOSX/
+.DS_Store
+._*
+cache/*
+!cache/.gitkeep
+uploads/
+TA/uploads/
+*.log

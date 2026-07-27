@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Инцидент {{ inc.get('ID инцидента', '') }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+<div class="container mt-4">
+    <h2>Инцидент {{ inc.get('ID инцидента', '') }}</h2>
+    <p><strong>Исполнитель:</strong> {{ inc.get('Исполнитель', '') }}</p>
+
+    <ul class="nav nav-tabs mb-4">
+        <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#analysis">✅ Анализ по промпту</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#raw">📋 Полная информация</a></li>
+    </ul>
+
+    <div class="tab-content">
+        <div class="tab-pane fade show active" id="analysis">
+            <h5>{{ inc['analysis'].get('Статус', '') }}</h5>
+           
+            <h6>Что произошло:</h6>
+            <p>{{ inc['analysis'].get('Что произошло', '') }}</p>
+           
+            <h6>Почему произошло:</h6>
+            <p>{{ inc['analysis'].get('Почему произошло', '') }}</p>
+           
+            <h6>Привлечённые компетенции:</h6>
+            <p>{{ inc['analysis'].get('Привлечённые компетенции', '') }}</p>
+           
+            <h6>Ход устранения:</h6>
+            <p>{{ inc['analysis'].get('Ход устранения', '') }}</p>
+           
+            <h6>Дата начала / окончания:</h6>
+            <p>{{ inc['analysis'].get('Дата начала', '') }} / {{ inc['analysis'].get('Дата окончания', '') }}</p>
+
+            {% if inc['analysis'].get('Jira_links') %}
+            <h6>Связанные задачи:</h6>
+            <ul>
+                {% for key, url in inc['analysis']['Jira_links'].items() %}
+                <li><a href="{{ url }}" target="_blank">{{ key }}</a></li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+
+            {% if inc['analysis'].get('Affected_systems') %}
+            <h6>Затронутые системы:</h6>
+            <p>{{ ', '.join(inc['analysis']['Affected_systems']) }}</p>
+            {% endif %}
+
+            {% if inc['analysis'].get('Problem_types') %}
+            <h6>Тип проблемы:</h6>
+            <p>{{ ', '.join(inc['analysis']['Problem_types']) }}</p>
+            {% endif %}
+
+            <h6>Замечания:</h6>
+            <ul>
+                {% for remark in inc['analysis'].get('Замечания', []) %}
+                <li class="text-danger">{{ remark }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+       
+        <div class="tab-pane fade" id="raw">
+            <h5>Описание</h5>
+            <pre>{{ inc.get('Описание', '') }}</pre>
+            <h5>Решение</h5>
+            <pre>{{ inc.get('Решение', '') }}</pre>
+        </div>
+    </div>
+
+    <!-- Кнопка назад с сохранением вкладки -->
+    <a href="{{ url_for('index', tab=current_tab) }}" class="btn btn-secondary mt-4">← Назад к списку</a>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

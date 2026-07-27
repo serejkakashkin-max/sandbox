@@ -1,0 +1,16 @@
+[Unit]
+Description=Sandbox experimental tools
+After=network.target
+
+[Service]
+Type=simple
+User=efs_dev
+WorkingDirectory=/home/efs_dev/sandbox
+EnvironmentFile=/home/efs_dev/sandbox/deploy/sandbox.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/efs_dev/.local/bin/uv run waitress-serve --listen=127.0.0.1:3535 wsgi:application
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

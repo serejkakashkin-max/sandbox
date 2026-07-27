@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Аудитор ИТ-инцидентов</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .nav-tabs .nav-link { font-weight: 500; }
+        .incident-card { cursor: pointer; }
+        .copy-btn { margin-left: 15px; }
+    </style>
+</head>
+<body>
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>🔍 Аудитор закрытия инцидентов</h2>
+        <button class="btn btn-outline-primary copy-btn" onclick="copyDashboardLink()">
+            📋 Копировать ссылку на дашборд
+        </button>
+    </div>
+
+    <form method="post" enctype="multipart/form-data" class="mb-4">
+        <input type="file" name="file" class="form-control" accept=".xlsx" required>
+        <button type="submit" class="btn btn-primary mt-2">Загрузить Excel файл</button>
+        <a href="{{ url_for('export') }}" class="btn btn-success mt-2">📊 Выгрузить в Excel</a>
+    </form>
+
+    {% if problem_stats %}
+    <div class="card mb-4">
+        <div class="card-header">
+            <strong>Типы проблем (по убыванию)</strong>
+        </div>
+        <div class="card-body">
+            <ul class="list-group">
+                {% for ptype, count in problem_stats %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    {{ ptype }}
+                    <span class="badge bg-primary rounded-pill">{{ count }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="mb-3">
+        <input type="text" id="search" class="form-control" placeholder="Поиск по ID или исполнителю..." onkeyup="filterIncidents()">
+    </div>
+
+    <ul class="nav nav-tabs mb-4">
+        <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#correct">Корректно ({{ correct|length }})</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#remarks">Есть замечания ({{ remarks|length }})</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#inwork">В работе ({{ in_work|length }})</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#test">Тестовые ({{ test|length }})</a></li>
+    </ul>
+
+    <div class="tab-content">
+        {% for category, data in [('correct', correct), ('remarks', remarks), ('inwork', in_work), ('test', test)] %}
+        <div class="tab-pane fade {% if category == 'correct' %}show active{% endif %}" id="{{ category }}">
+            {% for inc in data %}
+            <div class="border p-3 mb-2 incident-card" onclick="window.location={{ url_for('incident_detail', inc_id=inc.get('ID инцидента', ''), tab=category)|tojson }}">
+                <strong>{{ inc.get('ID инцидента', '') }}</strong> — {{ inc.get('Исполнитель', '') }}
+                {% if inc.get('analysis') %}
+                <span class="badge bg-{{ 'success' if 'корректно' in inc.analysis.Статус.lower() else 'warning' if 'замечания' in inc.analysis.Статус.lower() else 'danger' }} float-end">
+                    {{ inc.analysis.Статус }}
+                </span>
+                {% else %}
+                <span class="badge bg-secondary float-end">Анализ не проводится</span>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+function filterIncidents() {
+    let input = document.getElementById('search').value.toLowerCase();
+    let cards = document.querySelectorAll('.incident-card');
+    cards.forEach(card => {
+        card.style.display = card.textContent.toLowerCase().includes(input) ? '' : 'none';
+    });
+}
+
+function copyDashboardLink() {
+    const link = "https://sdpbi-analytics.ca.sbrf.ru/bt_p1173/superset/dashboard/847/";
+    navigator.clipboard.writeText(link).then(() => {
+        const btn = document.querySelector('.copy-btn');
+        const originalText = btn.textContent;
+        btn.textContent = "✅ Скопировано!";
+        btn.classList.add('btn-success');
+        btn.classList.remove('btn-outline-primary');
+        
+        setTimeout(() => {
+            btn.textContent = originalText;
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-outline-primary');
+        }, 2000);
+    });
+}
+</script>
+</body>
+</html>
