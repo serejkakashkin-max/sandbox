@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Release Monitor{% endblock %}</title>
+
+    <script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="app-shell">
+        <header class="topbar">
+            <div class="topbar-inner">
+                <div class="brand-block">
+                    <h1 class="brand-title">{% block page_title %}Release Monitor{% endblock %}</h1>
+                    <div class="brand-subtitle">
+                        {% block page_intro %}{% endblock %}
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="page-content">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

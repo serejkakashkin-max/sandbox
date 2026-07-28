@@ -14,4 +14,7 @@ cache/*
 !cache/.gitkeep
 uploads/
 TA/uploads/
+GD/cache/*
+!GD/cache/.gitkeep
+GD/test.pem
 *.log

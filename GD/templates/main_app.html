@@ -1,0 +1,296 @@
+{% extends "base.html" %}
+
+{% block title %}Release Monitor{% endblock %}
+
+{% block page_title %}Релизы{% endblock %}
+
+{% block page_intro %}
+<p class="page-intro-text">
+    Основной экран для просмотра кэша, контроля релизов и выгрузки сводных таблиц.
+</p>
+{% endblock %}
+
+{% block content %}
+<!-- Блок статуса кэша -->
+<section class="hero-panel">
+    <div class="hero-panel_left">
+    </div>
+    <div class="hero-panel_right">
+        <div class="cache-status-card">
+            <div class="cache-status-row">
+                <span class="meta-label">Источник кэша</span>
+                <span class="meta-value">{{ cache_info.source_name or "unknown" }}</span>
+            </div>
+            <div class="cache-status-row">
+                <span class="meta-label">Обновлён</span>
+                <span class="meta-value">{{ cache_info.updated_at or "нет данных" }}</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Карточки со сводкой -->
+<section class="summary-grid">
+    <article class="summary-card">
+        <span class="summary-label">Всего записей</span>
+        <strong class="summary-value">{{ summary.total_records or 0 }}</strong>
+    </article>
+    <article class="summary-card">
+        <span class="summary-label">За 2026 год</span>
+        <strong class="summary-value">{{ summary.records_2026 or 0 }}</strong>
+    </article>
+    <article class="summary-card">
+        <span class="summary-label">Проектов</span>
+        <strong class="summary-value">{{ summary.total_projects or 0 }}</strong>
+    </article>
+    <article class="summary-card">
+        <span class="summary-label">Ответственных</span>
+        <strong class="summary-value">{{ summary.total_owners or 0 }}</strong>
+    </article>
+</section>
+
+<!-- Панель фильтров -->
+<section class="filters-panel">
+    <form method="get" class="filters-form">
+        <div class="filter-field">
+            <label for="q">Поиск</label>
+            <input type="text" id="q" name="q" value="{{ selected_query or '' }}" placeholder="Проект, ответственный, релиз">
+        </div>
+        <div class="filter-field">
+            <label for="year">Год</label>
+            <select id="year" name="year">
+                <option value="">Все</option>
+                {% for year in years %}
+                    <option value="{{ year }}" {% if selected_year == year %}selected{% endif %}>{{ year }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="filter-field">
+            <label for="project">Проект</label>
+            <select id="project" name="project">
+                <option value="">Все</option>
+                {% for project in projects %}
+                    <option value="{{ project }}" {% if selected_project == project %}selected{% endif %}>{{ project }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="filter-field">
+            <label for="responsible">Ответственный</label>
+            <select id="responsible" name="responsible">
+                <option value="">Все</option>
+                {% for responsible in responsibles %}
+                    <option value="{{ responsible }}" {% if selected_responsible == responsible %}selected{% endif %}>{{ responsible }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="filter-actions">
+            <button type="submit" class="btn btn-primary">Применить</button>
+            <a href="{{ url_for('index') }}" class="btn btn-secondary">Сбросить</a>
+        </div>
+    </form>
+</section>
+
+<!-- Сводная таблица по проектам -->
+<section class="pivot-panel-2026">
+    <div class="pivot-panel-header-2026">
+        <h3>Сводная по проектам за 2026 год</h3>
+    </div>
+    <div class="pivot-table-wrap-2026">
+        <table class="pivot-table-2026">
+            <thead>
+                <tr>
+                    <th>Проект</th>
+                    {% for month in months_2026 %}
+                        <th>{{ month }}</th>
+                    {% endfor %}
+                    <th>Итого</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in projects_pivot_2026 %}
+                <tr>
+                    <td><span>{{ row.name }}</span></td>
+                    {% for month in months_2026 %}
+                        {% set value = row.months[loop.index0] %}
+                        <td>
+                            {% if value > 0 %}
+                                <!-- ВАЖНО: Ссылка на чистую таблицу релизов -->
+                                <a href="{{ url_for('releases_only', project=row.name, year=2026, month=month) }}" class="pivot-cell-link" target="_blank" rel="noopener noreferrer">
+                                    {{ value }}
+                                </a>
+                            {% else %}
+                                <span>{{ value }}</span>
+                            {% endif %}
+                        </td>
+                    {% endfor %}
+                    <td class="pivot-total-2026">
+                        {% if row.total > 0 %}
+                            <a href="{{ url_for('releases_only', project=row.name, year=2026) }}" class="pivot-cell-link" target="_blank" rel="noopener noreferrer">
+                                {{ row.total }}
+                            </a>
+                        {% else %}
+                            <span>{{ row.total }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<!-- График релизов -->
+<section class="chart-panel">
+    <div class="panel-header">
+        <h3>Динамика релизов по месяцам</h3>
+    </div>
+    <div class="chart-wrap" style="position: relative; height: 360px; min-height: 360px;">
+        <canvas
+            id="monthlyReleasesChart"
+            height="360"
+            data-labels='{{ monthly_labels | tojson | safe }}'
+            data-values='{{ monthly_values | tojson | safe }}'
+            data-releases-only-url="{{ url_for('releases_only') }}"
+        ></canvas>
+    </div>
+</section>
+
+<!-- Сводная таблица по ответственным -->
+<section>
+    <div class="pivot-panel-2026">
+        <div class="pivot-panel-header-2026">
+            <h3>Сводная по ответственным за 2026 год</h3>
+        </div>
+        <div class="pivot-table-wrap-2026">
+            <table class="pivot-table-2026 pivot-table-owners">
+                <thead>
+                    <tr>
+                        <th>Ответственный</th>
+                        {% for month in months_2026 %}
+                            <th>{{ month }}</th>
+                        {% endfor %}
+                        <th>Итого</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in owners_pivot_2026 %}
+                    <tr>
+                        <td>{{ row.name }}</td>
+                        {% for month in months_2026 %}
+                            {% set value = row.months[loop.index0] %}
+                            <td>
+                                {% if value > 0 %}
+                                    <!-- ВАЖНО: Ссылка на чистую таблицу релизов -->
+                                    <a href="{{ url_for('releases_only', responsible=row.name, year=2026, month=month) }}" class="pivot-cell-link" target="_blank" rel="noopener noreferrer">
+                                        {{ value }}
+                                    </a>
+                                {% else %}
+                                    <span>{{ value }}</span>
+                                {% endif %}
+                            </td>
+                        {% endfor %}
+                        <td class="pivot-total-2026">
+                            {% if row.total > 0 %}
+                                <a href="{{ url_for('releases_only', responsible=row.name, year=2026) }}" class="pivot-cell-link" target="_blank" rel="noopener noreferrer">
+                                    {{ row.total }}
+                                </a>
+                            {% else %}
+                                <span>{{ row.total }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<!-- Кнопки-выгрузки Excel -->
+<section class="filters-panel">
+    <div class="panel-header panel-header-between">
+        <h3>Выгрузки и действия</h3>
+        <div class="panel-meta">
+            <span>Сформировано: {{ generated_at }}</span>
+        </div>
+    </div>
+    <div class="download-links">
+        <a href="{{ url_for('download_releases_excel') }}" class="btn btn-primary">Выгрузить реестр релизов</a>
+        <a href="{{ url_for('download_release_summary_excel') }}" class="btn btn-secondary">Выгрузить свод по месяцам</a>
+        <a href="{{ url_for('download_raw_snapshot_excel') }}" class="btn btn-secondary">Выгрузить raw snapshot</a>
+        <a href="{{ url_for('debug_info') }}" class="btn btn-secondary" target="_blank">Debug JSON</a>
+        <a href="{{ url_for('health') }}" class="btn btn-secondary" target="_blank">Health</a>
+    </div>
+</section>
+
+<!-- Основная таблица релизов -->
+<section class="records-panel">
+    <div class="panel-header panel-header-between">
+        <div>
+            <h3>Таблица релизов</h3>
+            <p class="page-description">Рабочая таблица.</p>
+        </div>
+    </div>
+    <div class="table-wrap">
+        <table class="release-table data-table">
+            <thead>
+                <tr>
+                    <th>Название релиза</th>
+                    <th>Проект</th>
+                    <th>Источник</th>
+                    <th>ID релиза</th>
+                    <th>ID ROV</th>
+                    <th>Статус релиза</th>
+                    <th>Статус ROV</th>
+                    <th>Ответственный</th>
+                    <th>Дата начала</th>
+                    <th>Дата окончания</th>
+                    <th>Дата релиза</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if records %}
+                    {% for row in records %}
+                    <tr>
+                        <td class="cell-title">{{ row.release_name or "-" }}</td>
+                        <td>{{ row.project or "-" }}</td>
+                        <td>{{ row.source or "-" }}</td>
+                        <td>
+                            {% if row.release_id_link and row.release_id != "-" %}
+                                <a href="{{ row.release_id_link }}" class="jira-link" target="_blank" rel="noopener noreferrer">{{ row.release_id }}</a>
+                            {% else %}
+                                {{ row.release_id or "-" }}
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if row.rov_link and row.base_rov_key != "-" %}
+                                <a href="{{ row.rov_link }}" class="jira-link" target="_blank" rel="noopener noreferrer">{{ row.base_rov_key }}</a>
+                            {% else %}
+                                {{ row.base_rov_key or "-" }}
+                            {% endif %}
+                        </td>
+                        <td>{{ row.release_status or "-" }}</td>
+                        <td>{{ row.rov_status or "-" }}</td>
+                        <td>{{ row.owner or "-" }}</td>
+                        <td>{{ row.start_date or "-" }}</td>
+                        <td>{{ row.end_date or "-" }}</td>
+                        <td>{{ row.release_date or row.month_key or "-" }}</td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="11" class="empty-row">По текущим фильтрам записи не найдены.</td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<script>
+window.releaseChartData = {
+    labels: {{ monthly_labels | tojson | safe }},
+    values: {{ monthly_values | tojson | safe }}
+};
+</script>
+{% endblock %}

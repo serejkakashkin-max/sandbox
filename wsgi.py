@@ -5,6 +5,8 @@ from pathlib import Path
 
 from werkzeug.middleware.dispatcher import DispatcherMiddleware
 
+from GD.web_app import app as gd_application
+from GD.web_app import start_scheduler as start_gd_scheduler
 from sandbox_app import PublicPrefixMiddleware, create_app
 
 
@@ -24,10 +26,14 @@ def _load_ta_app_module():
 ta_app_module = _load_ta_app_module()
 ta_application = ta_app_module.app
 root_application = create_app()
+start_gd_scheduler()
 
 application = PublicPrefixMiddleware(
     DispatcherMiddleware(
         root_application,
-        {"/ta/incident-auditor": ta_application},
+        {
+            "/ta/incident-auditor": ta_application,
+            "/gd/release-monitor": gd_application,
+        },
     )
 )

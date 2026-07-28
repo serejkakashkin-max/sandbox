@@ -5,8 +5,11 @@ description = "Standalone Sandbox WSGI application with TA incident auditor."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "APScheduler>=3.11,<4",
     "Flask>=3.0,<4",
     "openpyxl>=3.1,<4",
     "pandas>=2.2,<3",
+    "requests>=2.32,<3",
+    "urllib3>=2.2,<3",
     "waitress>=3.0,<4",
 ]

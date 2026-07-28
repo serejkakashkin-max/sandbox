@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}Release Monitor{% endblock %}
+
+{% block page_title %}Релизы{% endblock %}
+
+{% block page_intro %}
+<p class="page-intro-text">
+    Таблица релизов за {{ selected_month }}
+</p>
+{% endblock %}
+
+{% block content %}
+<section class="records-panel">
+    <div class="table-wrap">
+        <table class="release-table data-table">
+            <thead>
+                <tr>
+                    <th>Название релиза</th>
+                    <th>Проект</th>
+                    <th>Источник</th>
+                    <th>ID релиза</th>
+                    <th>ID ROV</th>
+                    <th>Статус релиза</th>
+                    <th>Статус ROV</th>
+                    <th>Ответственный</th>
+                    <th>Дата начала</th>
+                    <th>Дата окончания</th>
+                    <th>Дата внедрения</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if records %}
+                    {% for row in records %}
+                    <tr>
+                        <td class="cell-title">{{ row.release_name or "-" }}</td>
+                        <td>{{ row.project or "-" }}</td>
+                        <td>{{ row.source or "-" }}</td>
+                        
+                        <!-- Колонка ID релиза с умной ссылкой -->
+                        <td>
+                            {% if row.release_id_link and row.release_id != "-" %}
+                                <a href="{{ row.release_id_link }}" class="jira-link" target="_blank" rel="noopener noreferrer">{{ row.release_id }}</a>
+                            {% else %}
+                                {{ row.release_id or "-" }}
+                            {% endif %}
+                        </td>
+
+                        <!-- Колонка ID ROV с умной ссылкой -->
+                        <td>
+                            {% if row.rov_link and row.base_rov_key != "-" %}
+                                <a href="{{ row.rov_link }}" class="jira-link" target="_blank" rel="noopener noreferrer">{{ row.base_rov_key }}</a>
+                            {% else %}
+                                {{ row.base_rov_key or "-" }}
+                            {% endif %}
+                        </td>
+
+                        <td>{{ row.release_status or "-" }}</td>
+                        <td>{{ row.rov_status or "-" }}</td>
+                        <td>{{ row.psi_responsible or row.owner or "-" }}</td>
+                        <td>{{ row.start_date or "-" }}</td>
+                        <td>{{ row.end_date or "-" }}</td>
+                        <td>{{ row.release_date or row.month_key or "-" }}</td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="11" class="empty-row">По выбранным фильтрам записи не найдены.</td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}
+

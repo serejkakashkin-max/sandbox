@@ -27,7 +27,8 @@ def create_app() -> Flask:
 
     @app.route("/")
     def sandbox_index() -> str:
-        module_url = _join_public_path(request.script_root, "/ta/incident-auditor")
+        ta_module_url = _join_public_path(request.script_root, "/ta/incident-auditor")
+        gd_module_url = _join_public_path(request.script_root, "/gd/release-monitor")
         modules: list[dict[str, Any]] = [
             {
                 "owner_code": "TA",
@@ -35,8 +36,16 @@ def create_app() -> Flask:
                 "title": "Аудитор инцидентов",
                 "description": "Экспериментальный инструмент анализа инцидентов",
                 "status": "EXPERIMENTAL",
-                "url": module_url,
-            }
+                "url": ta_module_url,
+            },
+            {
+                "owner_code": "GD",
+                "owner_name": "Гапоненко Дмитрий",
+                "title": "Монитор релизов",
+                "description": "Аналитический мониторинг и статистика релизов",
+                "status": "EXPERIMENTAL",
+                "url": gd_module_url,
+            },
         ]
         parent_url = os.getenv("SANDBOX_PARENT_URL", "/").strip() or "/"
         return render_template(
