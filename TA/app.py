@@ -9,7 +9,11 @@ from werkzeug.utils import secure_filename
 
 TA_DIR = Path(__file__).resolve().parent
 BASE_DIR = TA_DIR.parent
-app = Flask(__name__, template_folder=str(TA_DIR / 'templates'))
+app = Flask(
+    __name__,
+    template_folder=str(TA_DIR / 'templates'),
+    static_folder=str(TA_DIR / 'static'),
+)
 app.config['UPLOAD_FOLDER'] = str(BASE_DIR / 'cache' / 'ta_incident_auditor' / 'uploads')
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
@@ -151,6 +155,9 @@ def analyze_incident(inc):
 def index():
     global incidents
     problem_stats = []
+    current_tab = request.args.get('tab', 'correct')
+    if current_tab not in {'correct', 'remarks', 'inwork', 'test'}:
+        current_tab = 'correct'
 
     if request.method == 'POST':
         file = request.files.get('file')
@@ -205,7 +212,8 @@ def index():
                            remarks=remarks,
                            in_work=in_work,
                            test=test,
-                           problem_stats=problem_stats)
+                           problem_stats=problem_stats,
+                           current_tab=current_tab)
 
 @app.route('/incident/<inc_id>')
 def incident_detail(inc_id):
