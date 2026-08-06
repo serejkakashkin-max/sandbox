@@ -2,13 +2,51 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Инцидент {{ inc.get('ID инцидента', '') }}</title>
     <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
 </head>
 <body>
-<div class="container mt-4">
+<div class="container mt-4 mb-5">
     <h2>Инцидент {{ inc.get('ID инцидента', '') }}</h2>
     <p><strong>Исполнитель:</strong> {{ inc.get('Исполнитель', '') }}</p>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            {% if is_remembered %}
+            <div class="alert alert-success">
+                Этот инцидент уже в памяти
+                {% if remembered_data.tag %} — <strong>{{ remembered_data.tag }}</strong>{% endif %}
+                {% if remembered_data.comment %}<br>Комментарий: {{ remembered_data.comment }}{% endif %}
+            </div>
+            <form method="post" action="{{ url_for('unremember_incident', inc_id=inc.get('ID инцидента', '')) }}">
+                <input type="hidden" name="tab" value="{{ current_tab }}">
+                <input type="hidden" name="executor" value="{{ current_executor }}">
+                <input type="hidden" name="return_to" value="detail">
+                <button type="submit" class="btn btn-outline-danger btn-sm">Убрать из памяти</button>
+            </form>
+            {% else %}
+            <form method="post" action="{{ url_for('remember_incident', inc_id=inc.get('ID инцидента', '')) }}">
+                <input type="hidden" name="tab" value="{{ current_tab }}">
+                <input type="hidden" name="executor" value="{{ current_executor }}">
+                <div class="mb-2">
+                    <label class="form-label" for="comment">Комментарий (необязательно)</label>
+                    <textarea name="comment" id="comment" class="form-control" rows="2"></textarea>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label" for="tag">Тег</label>
+                    <select name="tag" id="tag" class="form-select">
+                        <option value="">— без тега —</option>
+                        <option value="WARNING1">WARNING1</option>
+                        <option value="WARNING2">WARNING2</option>
+                        <option value="WARNING3">WARNING3</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-warning">📌 Запомнить инцидент</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
 
     <ul class="nav nav-tabs mb-4">
         <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#analysis">✅ Анализ по промпту</a></li>
@@ -18,19 +56,22 @@
     <div class="tab-content">
         <div class="tab-pane fade show active" id="analysis">
             <h5>{{ inc['analysis'].get('Статус', '') }}</h5>
-           
+
             <h6>Что произошло:</h6>
             <p>{{ inc['analysis'].get('Что произошло', '') }}</p>
-           
+
             <h6>Почему произошло:</h6>
             <p>{{ inc['analysis'].get('Почему произошло', '') }}</p>
-           
+
+            <h6>Код закрытия:</h6>
+            <p>{{ inc['analysis'].get('Код закрытия') or '—' }}</p>
+
             <h6>Привлечённые компетенции:</h6>
             <p>{{ inc['analysis'].get('Привлечённые компетенции', '') }}</p>
-           
+
             <h6>Ход устранения:</h6>
             <p>{{ inc['analysis'].get('Ход устранения', '') }}</p>
-           
+
             <h6>Дата начала / окончания:</h6>
             <p>{{ inc['analysis'].get('Дата начала', '') }} / {{ inc['analysis'].get('Дата окончания', '') }}</p>
 
@@ -38,7 +79,7 @@
             <h6>Связанные задачи:</h6>
             <ul>
                 {% for key, url in inc['analysis']['Jira_links'].items() %}
-                <li><a href="{{ url }}" target="_blank">{{ key }}</a></li>
+                <li><a href="{{ url }}" target="_blank" rel="noopener noreferrer">{{ key }}</a></li>
                 {% endfor %}
             </ul>
             {% endif %}
@@ -54,23 +95,30 @@
             {% endif %}
 
             <h6>Замечания:</h6>
+            {% if inc['analysis'].get('Замечания') %}
             <ul>
                 {% for remark in inc['analysis'].get('Замечания', []) %}
                 <li class="text-danger">{{ remark }}</li>
                 {% endfor %}
             </ul>
+            {% else %}
+            <p class="text-success">Нет</p>
+            {% endif %}
         </div>
-       
+
         <div class="tab-pane fade" id="raw">
             <h5>Описание</h5>
-            <pre>{{ inc.get('Описание', '') }}</pre>
+            <pre class="text-wrap">{{ inc.get('Описание', '') }}</pre>
             <h5>Решение</h5>
-            <pre>{{ inc.get('Решение', '') }}</pre>
+            <pre class="text-wrap">{{ inc.get('Решение', '') }}</pre>
+            <h5>Причина (из файла)</h5>
+            <pre class="text-wrap">{{ inc.get('Причина', '—') }}</pre>
+            <h5>Код закрытия</h5>
+            <pre class="text-wrap">{{ inc.get('Код закрытия', '—') }}</pre>
         </div>
     </div>
 
-    <!-- Кнопка назад с сохранением вкладки -->
-    <a href="{{ url_for('index', tab=current_tab) }}" class="btn btn-secondary mt-4">← Назад к списку</a>
+    <a href="{{ url_for('index', tab=current_tab, executor=current_executor or none) }}" class="btn btn-secondary mt-4">← Назад к списку</a>
 </div>
 
 <script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
