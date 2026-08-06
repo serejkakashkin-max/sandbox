@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Протокол</title>
+    <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
+</head>
+<body>
+<div class="container mt-4 mb-5">
+    <h3>{% if history_view %}Архивный протокол{% else %}Сформированный протокол{% endif %}</h3>
+    {% if not history_view %}
+    <p class="text-muted">{% if saved %}Новая версия сохранена в истории.{% else %}Содержимое не изменилось — дубликат в историю не добавлен.{% endif %}</p>
+    {% endif %}
+    <pre id="protocolText" style="background:#f8f9fa; padding:20px; border-radius:8px; white-space:pre-wrap;">{{ protocol_text }}</pre>
+
+    <button type="button" class="btn btn-primary" id="copyProtocolButton" onclick="copyProtocol()">📋 Скопировать в буфер</button>
+    <a href="{{ url_for('protocols_history') }}" class="btn btn-outline-secondary">📜 История</a>
+    <a href="{{ url_for('index') }}" class="btn btn-secondary">← Назад</a>
+</div>
+<script>
+async function copyProtocol() {
+    const button = document.getElementById('copyProtocolButton');
+    const text = document.getElementById('protocolText').textContent;
+    try {
+        await navigator.clipboard.writeText(text);
+        const original = button.textContent;
+        button.textContent = '✅ Скопировано';
+        setTimeout(() => { button.textContent = original; }, 2000);
+    } catch (error) {
+        alert('Не удалось скопировать протокол');
+    }
+}
+</script>
+</body>
+</html>
