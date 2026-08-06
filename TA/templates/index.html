@@ -2,40 +2,77 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Аудитор ИТ-инцидентов</title>
     <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
     <style>
         .nav-tabs .nav-link { font-weight: 500; }
-        .incident-card { cursor: pointer; }
-        .copy-btn { margin-left: 15px; }
+        .incident-card { cursor: default; }
+        .incident-link { cursor: pointer; min-width: 0; }
+        .remembered-card { border: 2px solid #ffc107 !important; background-color: #fff8e1; }
+        .bulk-bar { position: sticky; top: 0; z-index: 100; background: #fff; padding: 10px; border-bottom: 1px solid #ddd; }
     </style>
 </head>
 <body>
-<div class="container mt-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
+<div class="container mt-4 mb-5">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <h2>🔍 Аудитор закрытия инцидентов</h2>
-        <button class="btn btn-outline-primary copy-btn" onclick="copyDashboardLink()">
-            📋 Копировать ссылку на дашборд
-        </button>
+        <div class="d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-outline-primary" id="dashboardCopyButton" onclick="copyDashboardLink()">📋 Дашборд</button>
+            <a href="{{ url_for('protocol') }}" class="btn btn-info">📄 Протокол ({{ remembered_count }})</a>
+            <a href="{{ url_for('protocols_history') }}" class="btn btn-outline-secondary">📜 История протоколов</a>
+            <form method="post" action="{{ url_for('clear_memory') }}" class="d-inline" onsubmit="return confirm('Очистить только память?')">
+                <input type="hidden" name="tab" value="{{ current_tab }}">
+                <input type="hidden" name="executor" value="{{ current_executor }}">
+                <button type="submit" class="btn btn-outline-warning">🗑 Очистить память</button>
+            </form>
+            <form method="post" action="{{ url_for('clear_incidents') }}" class="d-inline" onsubmit="return confirm('Очистить список инцидентов? Память сохранится.')">
+                <input type="hidden" name="tab" value="{{ current_tab }}">
+                <input type="hidden" name="executor" value="{{ current_executor }}">
+                <button type="submit" class="btn btn-outline-danger">🧹 Очистить список</button>
+            </form>
+        </div>
     </div>
 
     <form method="post" enctype="multipart/form-data" class="mb-4">
-        <input type="file" name="file" class="form-control" accept=".xlsx" required>
-        <button type="submit" class="btn btn-primary mt-2">Загрузить Excel файл</button>
+        <input type="hidden" name="tab" value="{{ current_tab }}">
+        <input type="hidden" name="executor" value="{{ current_executor }}">
+        <div class="row g-2">
+            <div class="col-md-8">
+                <input type="file" name="file" class="form-control" accept=".xlsx" required>
+            </div>
+            <div class="col-md-4">
+                <button type="submit" class="btn btn-primary w-100">Загрузить Excel</button>
+            </div>
+        </div>
         <a href="{{ url_for('export') }}" class="btn btn-success mt-2">📊 Выгрузить в Excel</a>
     </form>
 
+    <div class="mb-3">
+        <form method="get" class="row g-2">
+            <input type="hidden" name="tab" value="{{ current_tab }}">
+            <div class="col-md-4">
+                <select name="executor" class="form-select" onchange="this.form.submit()">
+                    <option value="">Все исполнители</option>
+                    {% for executor in executors %}
+                    <option value="{{ executor }}" {% if executor == current_executor %}selected{% endif %}>{{ executor }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-6">
+                <input type="text" id="search" class="form-control" placeholder="Поиск по ID или исполнителю..." onkeyup="filterIncidents()">
+            </div>
+        </form>
+    </div>
+
     {% if problem_stats %}
     <div class="card mb-4">
-        <div class="card-header">
-            <strong>Типы проблем (по убыванию)</strong>
-        </div>
+        <div class="card-header"><strong>Типы проблем</strong></div>
         <div class="card-body">
             <ul class="list-group">
                 {% for ptype, count in problem_stats %}
                 <li class="list-group-item d-flex justify-content-between align-items-center">
-                    {{ ptype }}
-                    <span class="badge bg-primary rounded-pill">{{ count }}</span>
+                    {{ ptype }} <span class="badge bg-primary rounded-pill">{{ count }}</span>
                 </li>
                 {% endfor %}
             </ul>
@@ -43,8 +80,50 @@
     </div>
     {% endif %}
 
-    <div class="mb-3">
-        <input type="text" id="search" class="form-control" placeholder="Поиск по ID или исполнителю..." onkeyup="filterIncidents()">
+    {% if remembered_list %}
+    <div class="card mb-4 border-warning">
+        <div class="card-header bg-warning text-dark"><strong>📌 Память ({{ remembered_count }})</strong></div>
+        <div class="card-body">
+            <ul class="list-group">
+                {% for inc_id, data in remembered_list.items() %}
+                <li class="list-group-item d-flex justify-content-between align-items-center gap-3">
+                    <div>
+                        {% if inc_id in incident_ids %}
+                        <a href="{{ url_for('incident_detail', inc_id=inc_id, tab=current_tab, executor=current_executor or none) }}">{{ inc_id }}</a>
+                        {% else %}
+                        <strong>{{ inc_id }}</strong>
+                        {% endif %}
+                        — {{ data.executor }}
+                        {% if data.tag %}<span class="badge bg-danger ms-2">{{ data.tag }}</span>{% endif %}
+                        {% if data.comment %}<br><small class="text-muted">{{ data.comment }}</small>{% endif %}
+                    </div>
+                    <form method="post" action="{{ url_for('unremember_incident', inc_id=inc_id) }}" class="m-0">
+                        <input type="hidden" name="tab" value="{{ current_tab }}">
+                        <input type="hidden" name="executor" value="{{ current_executor }}">
+                        <input type="hidden" name="return_to" value="index">
+                        <button type="submit" class="btn btn-sm btn-outline-danger" aria-label="Убрать из памяти">✕</button>
+                    </form>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="bulk-bar mb-3 d-none" id="bulkBar">
+        <form method="post" action="{{ url_for('bulk_remember') }}" class="d-flex flex-wrap gap-2 align-items-center">
+            <input type="hidden" name="tab" value="{{ current_tab }}">
+            <input type="hidden" name="executor" value="{{ current_executor }}">
+            <span id="selectedCount">0 выбрано</span>
+            <select name="bulk_tag" class="form-select form-select-sm" style="width:160px">
+                <option value="">Без тега</option>
+                <option value="WARNING1">WARNING1</option>
+                <option value="WARNING2">WARNING2</option>
+                <option value="WARNING3">WARNING3</option>
+            </select>
+            <button type="submit" class="btn btn-warning btn-sm">📌 Добавить выбранные в память</button>
+            <div id="bulkIds"></div>
+        </form>
     </div>
 
     <ul class="nav nav-tabs mb-4">
@@ -58,16 +137,21 @@
         {% for category, data in [('correct', correct), ('remarks', remarks), ('inwork', in_work), ('test', test)] %}
         <div class="tab-pane fade {% if category == current_tab %}show active{% endif %}" id="{{ category }}">
             {% for inc in data %}
-            <div class="border p-3 mb-2 incident-card" data-url="{{ url_for('incident_detail', inc_id=inc.get('ID инцидента', ''), tab=category) }}" onclick="window.location=this.dataset.url">
-                <strong>{{ inc.get('ID инцидента', '') }}</strong> — {{ inc.get('Исполнитель', '') }}
+            {% set incident_id = inc.get('ID инцидента', '')|string %}
+            <div class="border p-3 mb-2 incident-card d-flex align-items-center {% if incident_id in remembered_list %}remembered-card{% endif %}">
+                <input type="checkbox" class="form-check-input me-3 bulk-check" value="{{ incident_id }}" onchange="updateBulk()" aria-label="Выбрать инцидент {{ incident_id }}">
+                <div class="flex-grow-1 incident-link" data-url="{{ url_for('incident_detail', inc_id=incident_id, tab=category, executor=current_executor or none) }}" onclick="window.location=this.dataset.url">
+                    <strong>{{ incident_id }}</strong> — {{ inc.get('Исполнитель', '') }}
+                    {% if incident_id in remembered_list %}<span class="badge bg-warning text-dark">📌</span>{% endif %}
+                </div>
                 {% if inc.get('analysis') %}
-                <span class="badge bg-{{ 'success' if 'корректно' in inc.analysis.Статус.lower() else 'warning' if 'замечания' in inc.analysis.Статус.lower() else 'danger' }} float-end">
-                    {{ inc.analysis.Статус }}
-                </span>
+                <span class="badge bg-{{ 'success' if 'корректно' in inc.analysis.Статус.lower() else 'warning' }} ms-2">{{ inc.analysis.Статус }}</span>
                 {% else %}
-                <span class="badge bg-secondary float-end">Анализ не проводится</span>
+                <span class="badge bg-secondary ms-2">Анализ не проводится</span>
                 {% endif %}
             </div>
+            {% else %}
+            <p class="text-muted">В этой категории нет инцидентов.</p>
             {% endfor %}
         </div>
         {% endfor %}
@@ -77,28 +161,46 @@
 <script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
 <script>
 function filterIncidents() {
-    let input = document.getElementById('search').value.toLowerCase();
-    let cards = document.querySelectorAll('.incident-card');
-    cards.forEach(card => {
+    const input = document.getElementById('search').value.toLowerCase();
+    document.querySelectorAll('.incident-card').forEach(card => {
         card.style.display = card.textContent.toLowerCase().includes(input) ? '' : 'none';
     });
 }
 
-function copyDashboardLink() {
-    const link = "https://sdpbi-analytics.ca.sbrf.ru/bt_p1173/superset/dashboard/847/";
-    navigator.clipboard.writeText(link).then(() => {
-        const btn = document.querySelector('.copy-btn');
-        const originalText = btn.textContent;
-        btn.textContent = "✅ Скопировано!";
-        btn.classList.add('btn-success');
-        btn.classList.remove('btn-outline-primary');
-        
-        setTimeout(() => {
-            btn.textContent = originalText;
-            btn.classList.remove('btn-success');
-            btn.classList.add('btn-outline-primary');
-        }, 2000);
+function updateBulk() {
+    const checks = document.querySelectorAll('.bulk-check:checked');
+    const bar = document.getElementById('bulkBar');
+    const count = document.getElementById('selectedCount');
+    const idsContainer = document.getElementById('bulkIds');
+
+    idsContainer.replaceChildren();
+    if (checks.length === 0) {
+        bar.classList.add('d-none');
+        count.textContent = '0 выбрано';
+        return;
+    }
+
+    bar.classList.remove('d-none');
+    count.textContent = checks.length + ' выбрано';
+    checks.forEach(check => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'ids';
+        input.value = check.value;
+        idsContainer.appendChild(input);
     });
+}
+
+async function copyDashboardLink() {
+    const button = document.getElementById('dashboardCopyButton');
+    try {
+        await navigator.clipboard.writeText('https://sdpbi-analytics.ca.sbrf.ru/bt_p1173/superset/dashboard/847/');
+        const original = button.textContent;
+        button.textContent = '✅ Скопировано';
+        setTimeout(() => { button.textContent = original; }, 2000);
+    } catch (error) {
+        alert('Не удалось скопировать ссылку');
+    }
 }
 </script>
 </body>
