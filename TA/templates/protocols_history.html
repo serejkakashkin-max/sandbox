@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>История протоколов</title>
+    <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
+</head>
+<body>
+<div class="container mt-4 mb-5">
+    <h2>📜 История протоколов</h2>
+    <a href="{{ url_for('index') }}" class="btn btn-secondary mb-3">← Назад</a>
+
+    {% if files %}
+    <ul class="list-group">
+        {% for filename in files %}
+        <li class="list-group-item d-flex justify-content-between align-items-center gap-3">
+            <div>
+                <a href="{{ url_for('protocol_file', filename=filename) }}">{{ filename }}</a>
+                <br>
+                <small class="text-muted">{{ filename[9:19] }} {{ filename[20:28]|replace('-', ':') }}</small>
+            </div>
+            <form method="post" action="{{ url_for('delete_protocol', filename=filename) }}" class="m-0" onsubmit="return confirm('Удалить этот протокол?')">
+                <button type="submit" class="btn btn-sm btn-outline-danger" aria-label="Удалить протокол">✕</button>
+            </form>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-muted">История пуста</p>
+    {% endif %}
+</div>
+</body>
+</html>
