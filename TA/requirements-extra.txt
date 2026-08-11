@@ -1,4 +1,7 @@
 # Дополнительные зависимости TA для орфографии и GigaChat
 pyspellchecker==0.9.0
 pymorphy3==2.0.6
-gigachat==0.2.1
+# Проверенная на корпоративном mTLS стенде связка GigaChat SDK + HTTPX.
+gigachat==0.1.42.post2
+httpx==0.27.2
+httpcore==1.0.9
