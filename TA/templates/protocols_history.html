@@ -1,34 +1,46 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>История протоколов</title>
-    <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
-</head>
-<body>
-<div class="container mt-4 mb-5">
-    <h2>📜 История протоколов</h2>
-    <a href="{{ url_for('index') }}" class="btn btn-secondary mb-3">← Назад</a>
+{% extends "base.html" %}
 
+{% block title %}История протоколов · Контроль инцидентов{% endblock %}
+{% block page_class %}protocol-history-page{% endblock %}
+
+{% block content %}
+<a href="{{ url_for('index') }}" class="back-link">← Назад к инцидентам</a>
+<section class="page-heading">
+    <div>
+        <p class="page-kicker">Архив проверок</p>
+        <h1 class="page-title">История протоколов</h1>
+        <p class="page-description">Откройте прошлый протокол или удалите ненужный файл. Удаление требует подтверждения.</p>
+    </div>
+    <div class="page-actions">
+        <form method="post" action="{{ url_for('protocol') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-primary">Текущий протокол</button>
+        </form>
+    </div>
+</section>
+
+<section class="protocol-surface surface-card">
     {% if files %}
-    <ul class="list-group">
+    <ul class="protocol-list">
         {% for filename in files %}
-        <li class="list-group-item d-flex justify-content-between align-items-center gap-3">
+        <li class="protocol-list__item">
             <div>
                 <a href="{{ url_for('protocol_file', filename=filename) }}">{{ filename }}</a>
-                <br>
-                <small class="text-muted">{{ filename[9:19] }} {{ filename[20:28]|replace('-', ':') }}</small>
+                <div class="small text-muted mt-1">Сохранённый результат проверки</div>
             </div>
-            <form method="post" action="{{ url_for('delete_protocol', filename=filename) }}" class="m-0" onsubmit="return confirm('Удалить этот протокол?')">
-                <button type="submit" class="btn btn-sm btn-outline-danger" aria-label="Удалить протокол">✕</button>
+            <form method="post" action="{{ url_for('delete_protocol', filename=filename) }}" onsubmit="return confirm('Удалить этот протокол?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-sm btn-outline-danger" aria-label="Удалить {{ filename }}">Удалить</button>
             </form>
         </li>
         {% endfor %}
     </ul>
     {% else %}
-    <p class="text-muted">История пуста</p>
+    <div class="empty-state">
+        <div class="empty-state__icon">0</div>
+        <h2 class="section-title">История пока пуста</h2>
+        <p class="section-note">Сформированные протоколы появятся здесь.</p>
+    </div>
     {% endif %}
-</div>
-</body>
-</html>
+</section>
+{% endblock %}

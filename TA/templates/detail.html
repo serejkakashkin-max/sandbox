@@ -1,126 +1,448 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Инцидент {{ inc.get('ID инцидента', '') }}</title>
-    <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
-</head>
-<body>
-<div class="container mt-4 mb-5">
-    <h2>Инцидент {{ inc.get('ID инцидента', '') }}</h2>
-    <p><strong>Исполнитель:</strong> {{ inc.get('Исполнитель', '') }}</p>
+{% extends "base.html" %}
 
-    <div class="card mb-4">
-        <div class="card-body">
-            {% if is_remembered %}
-            <div class="alert alert-success">
-                Этот инцидент уже в памяти
-                {% if remembered_data.tag %} — <strong>{{ remembered_data.tag }}</strong>{% endif %}
-                {% if remembered_data.comment %}<br>Комментарий: {{ remembered_data.comment }}{% endif %}
+{% block title %}{{ inc.get('ID инцидента', '') }} · Проверка закрытия{% endblock %}
+{% block page_class %}incident-detail-page{% endblock %}
+
+{% macro render_problem_check(check, prefix, number, importance) %}
+{% set evidence_labels = {
+    'solution': 'В решении',
+    'excel': 'В файле',
+    'difference_minutes': 'Разница, минут',
+    'event': 'Событие в хронологии',
+    'start': 'Время начала',
+    'end': 'Время окончания',
+    'category': 'Причина из файла',
+    'close_code': 'Код закрытия',
+    'references': 'Найденные инциденты',
+    'parent_id': 'Основной инцидент из файла',
+    'roles': 'Найденные роли',
+    'action_found': 'Найдено действие',
+    'has_start': 'Есть событие начала',
+    'has_end': 'Есть событие завершения',
+    'fragments': 'Фрагменты текста',
+    'word': 'Слово',
+    'position': 'Позиция в тексте',
+    'suggestions': 'Варианты исправления',
+    'group': 'Группа проверки'
+} %}
+<div class="accordion-item">
+    <h3 class="accordion-header" id="{{ prefix }}Heading{{ number }}">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                data-bs-target="#{{ prefix }}Body{{ number }}" aria-expanded="false"
+                aria-controls="{{ prefix }}Body{{ number }}">
+            <span class="w-100">
+                <span class="check-title-row">
+                    <strong>{{ check.title }}</strong>
+                    <span class="status-pill status-pill--{{ check.severity }}">
+                        {% if check.severity == 'error' %}Ошибка{% else %}Замечание{% endif %}
+                    </span>
+                </span>
+                <span class="check-message d-block">{{ check.message }}</span>
+            </span>
+        </button>
+    </h3>
+    <div id="{{ prefix }}Body{{ number }}" class="accordion-collapse collapse"
+         aria-labelledby="{{ prefix }}Heading{{ number }}">
+        <div class="accordion-body">
+            <div class="check-detail-grid">
+                <div class="check-explanation">
+                    <p class="check-detail-label">Почему это важно</p>
+                    <div>{{ importance }}</div>
+                </div>
+                <div class="check-evidence">
+                    <p class="check-detail-label">Данные проверки</p>
+                    {% if check.evidence.get('conflicts') %}
+                        {% for conflict in check.evidence.conflicts %}
+                        <div class="chronology-conflict">
+                            <strong>Предыдущее событие · {{ conflict.previous_time }}</strong>
+                            <div>{{ conflict.previous_event }}</div>
+                            <div class="chronology-conflict__arrow">↓ время пошло назад на {{ conflict.backwards_minutes }} мин.</div>
+                            <strong>Следующее событие · {{ conflict.next_time }}</strong>
+                            <div>{{ conflict.next_event }}</div>
+                        </div>
+                        {% endfor %}
+                    {% elif check.evidence %}
+                    <dl class="evidence-list">
+                        {% for key, value in check.evidence.items() %}
+                        {% if key not in ['classification', 'kind', 'conflicts'] %}
+                        <dt>{{ evidence_labels.get(key, 'Дополнительные данные') }}</dt>
+                        <dd>
+                            {% if value is sameas true %}
+                                Да
+                            {% elif value is sameas false %}
+                                Нет
+                            {% elif value is sequence and value is not string %}
+                                {% if value %}{{ value | join('; ') }}{% else %}Не найдено{% endif %}
+                            {% else %}
+                                {{ value if value not in [None, ''] else 'Не указано' }}
+                            {% endif %}
+                        </dd>
+                        {% endif %}
+                        {% endfor %}
+                    </dl>
+                    {% else %}
+                    <span class="text-muted">Дополнительные данные не требуются.</span>
+                    {% endif %}
+                </div>
+                <div class="check-recommendation">
+                    <p class="check-detail-label">Что исправить</p>
+                    <div>{{ check.recommendation or 'Проверьте формулировку и добавьте недостающие данные в решение инцидента.' }}</div>
+                </div>
             </div>
-            <form method="post" action="{{ url_for('unremember_incident', inc_id=inc.get('ID инцидента', '')) }}">
-                <input type="hidden" name="tab" value="{{ current_tab }}">
-                <input type="hidden" name="executor" value="{{ current_executor }}">
-                <input type="hidden" name="return_to" value="detail">
-                <button type="submit" class="btn btn-outline-danger btn-sm">Убрать из памяти</button>
-            </form>
-            {% else %}
-            <form method="post" action="{{ url_for('remember_incident', inc_id=inc.get('ID инцидента', '')) }}">
-                <input type="hidden" name="tab" value="{{ current_tab }}">
-                <input type="hidden" name="executor" value="{{ current_executor }}">
-                <div class="mb-2">
-                    <label class="form-label" for="comment">Комментарий (необязательно)</label>
-                    <textarea name="comment" id="comment" class="form-control" rows="2"></textarea>
-                </div>
-                <div class="mb-2">
-                    <label class="form-label" for="tag">Тег</label>
-                    <select name="tag" id="tag" class="form-select">
-                        <option value="">— без тега —</option>
-                        <option value="WARNING1">WARNING1</option>
-                        <option value="WARNING2">WARNING2</option>
-                        <option value="WARNING3">WARNING3</option>
-                    </select>
-                </div>
-                <button type="submit" class="btn btn-warning">📌 Запомнить инцидент</button>
-            </form>
-            {% endif %}
+        </div>
+    </div>
+</div>
+{% endmacro %}
+
+{% macro render_ai_fact(title, fact) %}
+<article class="ai-fact">
+    <h3>{{ title }}</h3>
+    <div>{{ fact.value or 'Не найдено' }}</div>
+    <span class="ai-source">Источник: {{ fact.source }}</span>
+</article>
+{% endmacro %}
+
+{% block content %}
+{% set ai_available = ai_state is defined and active_detail_tab is defined %}
+{% set selected_detail_tab = active_detail_tab if ai_available else 'audit' %}
+<a href="{{ url_for('index', tab=current_tab) }}" class="back-link">← Назад к списку</a>
+
+{% set analysis = inc.analysis %}
+{% set error_checks = analysis.checks | selectattr('severity', 'equalto', 'error') | list %}
+{% set warning_checks = analysis.checks | selectattr('severity', 'equalto', 'warning') | list %}
+{% set passed_checks = analysis.checks | rejectattr('status', 'equalto', 'remark') | list %}
+
+<section class="verdict-hero surface-card" aria-labelledby="incident-title">
+    <div class="verdict-hero__header">
+        <div>
+            <p class="page-kicker">Результат проверки</p>
+            <h1 class="verdict-hero__id" id="incident-title">{{ inc.get('ID инцидента', '') }}</h1>
+            <p class="verdict-hero__executor">{{ inc.executor_display }}</p>
+            <div class="d-flex flex-wrap gap-2 mt-3">
+                <span class="status-pill status-pill--{{ analysis.outcome }}">{{ analysis.Статус }}</span>
+            </div>
+        </div>
+        <div class="verdict-stats" aria-label="Количество проверок">
+            <div class="verdict-stat"><strong>{{ analysis.summary.error }}</strong><span>ошибок</span></div>
+            <div class="verdict-stat"><strong>{{ analysis.summary.warning }}</strong><span>замечаний</span></div>
+            <div class="verdict-stat"><strong>{{ analysis.summary.passed }}</strong><span>пройдено</span></div>
+            <div class="verdict-stat"><strong>{{ analysis.summary.info + analysis.summary.skipped }}</strong><span>информация</span></div>
         </div>
     </div>
 
-    <ul class="nav nav-tabs mb-4">
-        <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#analysis">✅ Анализ по промпту</a></li>
-        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#raw">📋 Полная информация</a></li>
-    </ul>
-
-    <div class="tab-content">
-        <div class="tab-pane fade show active" id="analysis">
-            <h5>{{ inc['analysis'].get('Статус', '') }}</h5>
-
-            <h6>Что произошло:</h6>
-            <p>{{ inc['analysis'].get('Что произошло', '') }}</p>
-
-            <h6>Почему произошло:</h6>
-            <p>{{ inc['analysis'].get('Почему произошло', '') }}</p>
-
-            <h6>Код закрытия:</h6>
-            <p>{{ inc['analysis'].get('Код закрытия') or '—' }}</p>
-
-            <h6>Привлечённые компетенции:</h6>
-            <p>{{ inc['analysis'].get('Привлечённые компетенции', '') }}</p>
-
-            <h6>Ход устранения:</h6>
-            <p>{{ inc['analysis'].get('Ход устранения', '') }}</p>
-
-            <h6>Дата начала / окончания:</h6>
-            <p>{{ inc['analysis'].get('Дата начала', '') }} / {{ inc['analysis'].get('Дата окончания', '') }}</p>
-
-            {% if inc['analysis'].get('Jira_links') %}
-            <h6>Связанные задачи:</h6>
-            <ul>
-                {% for key, url in inc['analysis']['Jira_links'].items() %}
-                <li><a href="{{ url }}" target="_blank" rel="noopener noreferrer">{{ key }}</a></li>
-                {% endfor %}
-            </ul>
-            {% endif %}
-
-            {% if inc['analysis'].get('Affected_systems') %}
-            <h6>Затронутые системы:</h6>
-            <p>{{ ', '.join(inc['analysis']['Affected_systems']) }}</p>
-            {% endif %}
-
-            {% if inc['analysis'].get('Problem_types') %}
-            <h6>Тип проблемы:</h6>
-            <p>{{ ', '.join(inc['analysis']['Problem_types']) }}</p>
-            {% endif %}
-
-            <h6>Замечания:</h6>
-            {% if inc['analysis'].get('Замечания') %}
-            <ul>
-                {% for remark in inc['analysis'].get('Замечания', []) %}
-                <li class="text-danger">{{ remark }}</li>
-                {% endfor %}
-            </ul>
-            {% else %}
-            <p class="text-success">Нет</p>
-            {% endif %}
-        </div>
-
-        <div class="tab-pane fade" id="raw">
-            <h5>Описание</h5>
-            <pre class="text-wrap">{{ inc.get('Описание', '') }}</pre>
-            <h5>Решение</h5>
-            <pre class="text-wrap">{{ inc.get('Решение', '') }}</pre>
-            <h5>Причина (из файла)</h5>
-            <pre class="text-wrap">{{ inc.get('Причина', '—') }}</pre>
-            <h5>Код закрытия</h5>
-            <pre class="text-wrap">{{ inc.get('Код закрытия', '—') }}</pre>
-        </div>
+    <div class="summary-grid">
+        <article class="summary-card">
+            <div class="summary-card__label">Что произошло</div>
+            <div class="summary-card__value">{{ analysis.get('Что произошло', 'Не указано') }}</div>
+        </article>
+        <article class="summary-card">
+            <div class="summary-card__label">Почему произошло</div>
+            <div class="summary-card__value">{{ analysis.get('Почему произошло', 'Не указано') }}</div>
+        </article>
+        <article class="summary-card">
+            <div class="summary-card__label">Как устранено</div>
+            <div class="summary-card__value">{{ analysis.get('Ход устранения', 'Не указано') }}</div>
+        </article>
     </div>
 
-    <a href="{{ url_for('index', tab=current_tab, executor=current_executor or none) }}" class="btn btn-secondary mt-4">← Назад к списку</a>
+    <div class="d-flex flex-wrap gap-2 mt-3">
+        <span class="micro-pill">Код закрытия: {{ analysis.get('Код закрытия', '—') or '—' }}</span>
+        <span class="micro-pill">Компетенции: {{ analysis.get('Привлечённые компетенции', 'Не указано') }}</span>
+        {% for key, url in analysis.get('Jira_links', {}).items() %}
+        <a class="micro-pill" href="{{ url }}" target="_blank" rel="noopener">{{ key }}</a>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="secondary-surface surface-card" aria-labelledby="memory-title">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+        <div>
+            <h2 class="section-title" id="memory-title">Текущий протокол</h2>
+            <p class="section-note">Добавьте инцидент в текущую подборку для формирования протокола.</p>
+        </div>
+        {% if is_remembered %}
+        <span class="status-pill status-pill--passed">Сохранён{% if remembered_data.tag %} · {{ remembered_data.tag }}{% endif %}</span>
+        {% endif %}
+    </div>
+    {% if is_remembered %}
+        {% if remembered_data.comment %}<p class="mt-3 mb-2">{{ remembered_data.comment }}</p>{% endif %}
+        <form method="post" action="{{ url_for('unremember_incident', inc_id=inc.get('ID инцидента')) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="tab" value="{{ current_tab }}">
+            <input type="hidden" name="return_to" value="detail">
+            <button type="submit" class="btn btn-sm btn-outline-danger">Убрать из протокола</button>
+        </form>
+    {% else %}
+        <form method="post" action="{{ url_for('remember_incident', inc_id=inc.get('ID инцидента')) }}?tab={{ current_tab }}" class="row g-2 mt-2 align-items-end">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="col-lg-7">
+                <label class="form-label" for="memoryComment">Комментарий</label>
+                <textarea id="memoryComment" name="comment" class="form-control" rows="2" placeholder="Что проверить повторно"></textarea>
+            </div>
+            <div class="col-lg-3">
+                <label class="form-label" for="memoryTag">Тег</label>
+                <select id="memoryTag" name="tag" class="form-select">
+                    <option value="">Без тега</option>
+                    <option value="WARNING1">WARNING1</option>
+                    <option value="WARNING2">WARNING2</option>
+                    <option value="WARNING3">WARNING3</option>
+                </select>
+            </div>
+            <div class="col-lg-2"><button type="submit" class="btn btn-warning w-100">Добавить</button></div>
+        </form>
+    {% endif %}
+</section>
+
+<ul class="nav nav-pills detail-tabs surface-card p-2" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link {% if selected_detail_tab == 'audit' %}active{% endif %}" id="audit-tab" data-bs-toggle="tab" data-bs-target="#audit-content" type="button" role="tab" aria-controls="audit-content" aria-selected="{{ 'true' if selected_detail_tab == 'audit' else 'false' }}">Проверка закрытия</button>
+    </li>
+    {% if ai_available %}
+    <li class="nav-item" role="presentation">
+        <button class="nav-link {% if selected_detail_tab == 'ai' %}active{% endif %}" id="ai-tab" data-bs-toggle="tab" data-bs-target="#ai-content" type="button" role="tab" aria-controls="ai-content" aria-selected="{{ 'true' if selected_detail_tab == 'ai' else 'false' }}">AI-анализ</button>
+    </li>
+    {% endif %}
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="raw-tab" data-bs-toggle="tab" data-bs-target="#raw-content" type="button" role="tab" aria-controls="raw-content" aria-selected="false">Полная информация</button>
+    </li>
+</ul>
+
+{% if not ai_available %}
+<div class="alert alert-info" role="status">
+    Карточка открыта в режиме совместимости. Чтобы включить AI-анализ, перезапустите приложение.
+</div>
+{% endif %}
+
+<div class="tab-content">
+    <div class="tab-pane fade {% if selected_detail_tab == 'audit' %}show active{% endif %}" id="audit-content" role="tabpanel" aria-labelledby="audit-tab" tabindex="0">
+        <div class="mb-3">
+            <h2 class="section-title">Проверки закрытия</h2>
+            <p class="section-note">Сначала показаны ошибки, затем рекомендации. Нажмите на проверку, чтобы увидеть объяснение и данные.</p>
+        </div>
+
+        <section class="audit-section audit-section--error surface-card" id="audit-errors" aria-labelledby="audit-errors-title">
+            <div class="audit-section__header">
+                <div><h2 class="section-title" id="audit-errors-title">Требует исправления</h2><p class="section-note">Нарушены обязательные условия закрытия.</p></div>
+                <span class="status-pill status-pill--error">{{ error_checks|length }}</span>
+            </div>
+            {% if error_checks %}
+            <div class="accordion check-accordion" id="errorChecks">
+                {% for check in error_checks %}
+                    {{ render_problem_check(check, 'error', loop.index, 'Это обязательная часть карточки. Без неё следующий специалист не сможет однозначно восстановить ход и результат работы.') }}
+                {% endfor %}
+            </div>
+            {% else %}<p class="section-note mb-0">Обязательные нарушения не найдены.</p>{% endif %}
+        </section>
+
+        <section class="audit-section audit-section--warning surface-card" id="audit-warnings" aria-labelledby="audit-warnings-title">
+            <div class="audit-section__header">
+                <div><h2 class="section-title" id="audit-warnings-title">Есть замечания</h2><p class="section-note">Закрытие возможно, но описание стоит сделать точнее.</p></div>
+                <span class="status-pill status-pill--warning">{{ warning_checks|length }}</span>
+            </div>
+            {% if warning_checks %}
+            <div class="accordion check-accordion" id="warningChecks">
+                {% for check in warning_checks %}
+                    {{ render_problem_check(check, 'warning', loop.index, 'Неточность снижает понятность карточки и может затруднить повторное расследование похожего инцидента.') }}
+                {% endfor %}
+            </div>
+            {% else %}<p class="section-note mb-0">Рекомендаций по улучшению нет.</p>{% endif %}
+        </section>
+
+        <section class="audit-section audit-section--passed surface-card" id="audit-passed" aria-labelledby="audit-passed-title">
+            <div class="audit-section__header">
+                <div><h2 class="section-title" id="audit-passed-title">Пройденные и информационные проверки</h2><p class="section-note">Доступны по клику, чтобы не перегружать основной результат.</p></div>
+                <span class="status-pill status-pill--passed">{{ passed_checks|length }}</span>
+            </div>
+            {% if passed_checks %}
+            <div class="accordion check-accordion" id="passedChecks">
+                {% for check in passed_checks %}
+                <div class="accordion-item">
+                    <h3 class="accordion-header" id="passedHeading{{ loop.index }}">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#passedBody{{ loop.index }}" aria-expanded="false" aria-controls="passedBody{{ loop.index }}">
+                            <span class="w-100"><span class="check-title-row"><strong>{{ check.title }}</strong><span class="status-pill status-pill--passed">{% if check.status == 'passed' %}Пройдено{% elif check.status == 'skipped' %}Не проверяется{% else %}Информация{% endif %}</span></span><span class="check-message d-block">{{ check.message }}</span></span>
+                        </button>
+                    </h3>
+                    <div id="passedBody{{ loop.index }}" class="accordion-collapse collapse" aria-labelledby="passedHeading{{ loop.index }}">
+                        <div class="accordion-body"><span class="text-muted">Проверка не требует действий пользователя.</span></div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}<p class="section-note mb-0">Дополнительных проверок нет.</p>{% endif %}
+        </section>
+
+        {% if history %}
+        <section class="secondary-surface surface-card" aria-labelledby="history-title">
+            <h2 class="section-title" id="history-title">Проверялся ранее</h2>
+            <p class="section-note mb-3">Сравнение прошлых замечаний с текущей карточкой.</p>
+            <div class="history-grid">
+                {% for row in history %}
+                <article class="history-item">
+                    <div class="history-item__header">
+                        <div><strong>{{ row.check_date }}</strong>{% if row.protocol_file %} <span class="text-muted">· {{ row.protocol_file }}</span>{% endif %}{% if row.tag %} <span class="micro-pill">{{ row.tag }}</span>{% endif %}</div>
+                        {% if row.fix_eval %}<span class="status-pill status-pill--{% if row.fix_eval.status_class == 'success' %}passed{% elif row.fix_eval.status_class == 'danger' %}error{% else %}warning{% endif %}">{{ row.fix_eval.status_label }}</span>{% endif %}
+                    </div>
+                    {% if row.comment %}<div class="mt-2">Комментарий тогда: {{ row.comment }}</div>{% endif %}
+                    {% if row.executor %}<div class="small text-muted">Исполнитель тогда: {{ row.executor }}</div>{% endif %}
+                    {% if row.fix_eval and row.fix_eval.details %}<ul class="small mb-0 mt-2">{% for detail in row.fix_eval.details %}<li>{{ detail }}</li>{% endfor %}</ul>{% endif %}
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+    </div>
+
+    {% if ai_available %}
+    <div class="tab-pane fade {% if selected_detail_tab == 'ai' %}show active{% endif %}" id="ai-content" role="tabpanel" aria-labelledby="ai-tab" tabindex="0">
+        <section class="ai-report surface-card"
+                 data-ai-panel
+                 data-ai-status="{{ ai_state.status }}"
+                 data-ai-status-url="{{ url_for('ai_analysis_status', inc_id=inc.get('ID инцидента')) }}">
+            <div class="ai-report__header">
+                <div>
+                    <p class="page-kicker">Второе мнение</p>
+                    <h2 class="section-title">Независимый AI-анализ</h2>
+                    <p class="section-note">GigaChat изучает только исходные сведения карточки и не видит результат программной проверки.</p>
+                </div>
+                <div class="ai-report__actions">
+                    {% if ai_state.status == 'running' %}
+                    <button type="button" class="btn btn-outline-secondary ai-action"
+                            data-ai-url="{{ url_for('run_ai_analysis', inc_id=inc.get('ID инцидента')) }}"
+                            data-ai-status-url="{{ url_for('ai_analysis_status', inc_id=inc.get('ID инцидента')) }}"
+                            data-ai-detail-url="{{ url_for('incident_detail', inc_id=inc.get('ID инцидента'), tab=current_tab, view='ai') }}"
+                            data-ai-status="running" data-csrf-token="{{ csrf_token }}" disabled>Анализируется…</button>
+                    {% elif ai_state.analysis %}
+                    <button type="button" class="btn btn-outline-primary ai-action"
+                            data-ai-url="{{ url_for('run_ai_analysis', inc_id=inc.get('ID инцидента')) }}"
+                            data-ai-status-url="{{ url_for('ai_analysis_status', inc_id=inc.get('ID инцидента')) }}"
+                            data-ai-detail-url="{{ url_for('incident_detail', inc_id=inc.get('ID инцидента'), tab=current_tab, view='ai') }}"
+                            data-ai-status="{{ ai_state.status }}" data-ai-force="1"
+                            data-csrf-token="{{ csrf_token }}">Проверить заново</button>
+                    {% else %}
+                    <button type="button" class="btn btn-primary ai-action"
+                            data-ai-url="{{ url_for('run_ai_analysis', inc_id=inc.get('ID инцидента')) }}"
+                            data-ai-status-url="{{ url_for('ai_analysis_status', inc_id=inc.get('ID инцидента')) }}"
+                            data-ai-detail-url="{{ url_for('incident_detail', inc_id=inc.get('ID инцидента'), tab=current_tab, view='ai') }}"
+                            data-ai-status="{{ ai_state.status }}" data-csrf-token="{{ csrf_token }}">Запустить AI-анализ</button>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="ai-feedback {% if ai_state.status != 'failed' %}d-none{% endif %}" role="status" data-ai-feedback>
+                {% if ai_state.status == 'failed' %}Последняя попытка не удалась. Сохранённый успешный отчёт, если он есть, оставлен без изменений.{% endif %}
+            </div>
+
+            {% if ai_state.analysis %}
+            {% set ai = ai_state.analysis %}
+            <div class="ai-report__result" data-ai-result>
+                <div class="ai-verdict ai-verdict--{{ ai.verdict }}">
+                    <div>
+                        <span class="ai-verdict__label">Вывод независимого наблюдателя</span>
+                        <strong>{% if ai.verdict == 'sufficient' %}Информации достаточно{% elif ai.verdict == 'gaps' %}Есть существенные пробелы{% else %}Недостаточно данных{% endif %}</strong>
+                    </div>
+                    <span class="micro-pill">Сохранённый результат{% if ai_state.completed_at %} · {{ ai_state.completed_at }}{% endif %}</span>
+                </div>
+                <p class="ai-report__summary">{{ ai.summary }}</p>
+
+                <div class="ai-fact-grid">
+                    {{ render_ai_fact('Что произошло', ai.what_happened) }}
+                    {{ render_ai_fact('Начало', ai.start_time) }}
+                    {{ render_ai_fact('Окончание', ai.end_time) }}
+                    {{ render_ai_fact('Продолжительность', ai.duration) }}
+                    {{ render_ai_fact('Итог устранения', ai.resolution_result) }}
+                </div>
+
+                <details class="ai-report__section" open>
+                    <summary>Причина и согласованность</summary>
+                    <div class="ai-fact-grid mt-3">
+                        {{ render_ai_fact('Фактическая причина', ai.actual_cause) }}
+                        {{ render_ai_fact('Причина из Excel', ai.excel_cause) }}
+                        {{ render_ai_fact('Согласованность', ai.cause_consistency) }}
+                    </div>
+                </details>
+
+                <details class="ai-report__section" open>
+                    <summary>Влияние</summary>
+                    <div class="ai-impact mt-3">
+                        <span class="status-pill status-pill--{% if ai.impact.state == 'present' %}warning{% elif ai.impact.state == 'absent' %}passed{% else %}skipped{% endif %}">
+                            {% if ai.impact.state == 'present' %}Влияние было{% elif ai.impact.state == 'absent' %}Влияния не было{% else %}Не определено{% endif %}
+                        </span>
+                        <div>{{ ai.impact.description or 'Не найдено' }}</div>
+                        {% if ai.impact.scale %}<div><strong>Масштаб:</strong> {{ ai.impact.scale }}</div>{% endif %}
+                        <span class="ai-source">Источник: {{ ai.impact.source }}</span>
+                    </div>
+                </details>
+
+                <details class="ai-report__section" open>
+                    <summary>Участники и компетенции</summary>
+                    {% if ai.participants %}
+                    <div class="ai-list mt-3">
+                        {% for participant in ai.participants %}
+                        <article><strong>{{ participant.name or 'ФИО не найдено' }}</strong>{% if participant.workgroup %}<span>{{ participant.workgroup }}</span>{% endif %}<div>{{ participant.role_or_action or 'Действие не указано' }}</div><small>Источник: {{ participant.source }}</small></article>
+                        {% endfor %}
+                    </div>
+                    {% else %}<p class="section-note mt-3">Участники не найдены.</p>{% endif %}
+                    {% if ai.competencies %}<div class="d-flex flex-wrap gap-2 mt-3">{% for competency in ai.competencies %}<span class="micro-pill">{{ competency }}</span>{% endfor %}</div>{% endif %}
+                </details>
+
+                <details class="ai-report__section" open>
+                    <summary>Ход устранения</summary>
+                    {% if ai.remediation_steps %}
+                    <ol class="ai-timeline mt-3">
+                        {% for step in ai.remediation_steps %}
+                        <li><strong>{{ step.action }}</strong>{% if step.time %}<span>{{ step.time }}</span>{% endif %}{% if step.actor %}<div>Кто: {{ step.actor }}</div>{% endif %}{% if step.result %}<div>Результат: {{ step.result }}</div>{% endif %}<small>Источник: {{ step.source }}</small></li>
+                        {% endfor %}
+                    </ol>
+                    {% else %}<p class="section-note mt-3">Последовательность действий не найдена.</p>{% endif %}
+                </details>
+
+                <details class="ai-report__section">
+                    <summary>Хронология</summary>
+                    {% if ai.chronology %}
+                    <ol class="ai-timeline mt-3">{% for event in ai.chronology %}<li><strong>{{ event.date_time or 'Время не найдено' }}</strong><div>{{ event.event }}</div><small>Источник: {{ event.source }}</small></li>{% endfor %}</ol>
+                    {% else %}<p class="section-note mt-3">Хронология не восстановлена.</p>{% endif %}
+                </details>
+
+                <details class="ai-report__section" {% if ai.missing_information or ai.contradictions %}open{% endif %}>
+                    <summary>Пробелы и рекомендации</summary>
+                    {% if ai.contradictions %}<h3 class="ai-subtitle">Противоречия</h3><ul>{% for item in ai.contradictions %}<li>{% if item is mapping %}{{ item.get('problem', item.get('description', item)) }}{% else %}{{ item }}{% endif %}</li>{% endfor %}</ul>{% endif %}
+                    {% if ai.missing_information %}<h3 class="ai-subtitle">Недостающие сведения</h3><div class="ai-list">{% for item in ai.missing_information %}<article><span class="status-pill status-pill--{% if item.severity == 'error' %}error{% else %}warning{% endif %}">{{ 'Пробел' if item.severity == 'error' else 'Рекомендация' }}</span><strong>{{ item.field }}</strong><div>{{ item.problem }}</div><small>{{ item.recommendation }}</small></article>{% endfor %}</div>{% endif %}
+                    {% if ai.recommendations %}<h3 class="ai-subtitle">Что улучшить</h3><ul>{% for item in ai.recommendations %}<li><strong>{{ item.field }}:</strong> {{ item.recommendation }}</li>{% endfor %}</ul>{% endif %}
+                    {% if not ai.contradictions and not ai.missing_information and not ai.recommendations %}<p class="section-note mt-3">Существенные пробелы не найдены.</p>{% endif %}
+                </details>
+
+                <details class="ai-report__section">
+                    <summary>Орфография</summary>
+                    {% if ai.spelling_remarks %}<ul class="mt-3">{% for item in ai.spelling_remarks %}<li><strong>{{ item.fragment }}</strong> → {{ item.suggestion }}</li>{% endfor %}</ul>{% else %}<p class="section-note mt-3">Отдельных орфографических замечаний нет.</p>{% endif %}
+                </details>
+            </div>
+            {% else %}
+            <div class="ai-empty" data-ai-empty>
+                <strong>AI-анализ ещё не выполнялся</strong>
+                <p>Запрос будет отправлен только после нажатия кнопки. Результат сохранится и не изменит программную проверку.</p>
+            </div>
+            {% endif %}
+        </section>
+    </div>
+    {% endif %}
+
+    <div class="tab-pane fade" id="raw-content" role="tabpanel" aria-labelledby="raw-tab" tabindex="0">
+        <dl class="raw-primary-grid">
+            {% for field in detail_fields %}
+            {% if field.primary %}
+            <div class="raw-field raw-field--primary"><dt>{{ field.label }}</dt><dd>{{ field.value }}</dd></div>
+            {% endif %}
+            {% endfor %}
+        </dl>
+        <dl class="raw-grid">
+            {% for field in detail_fields %}
+            {% if not field.primary %}
+            <div class="raw-field"><dt>{{ field.label }}</dt><dd>{{ field.value }}</dd></div>
+            {% endif %}
+            {% endfor %}
+        </dl>
+    </div>
 </div>
 
-<script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
-</body>
-</html>
+<a href="{{ url_for('index', tab=current_tab) }}" class="back-link mt-4">← Назад к списку</a>
+{% endblock %}

@@ -1,207 +1,317 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Аудитор ИТ-инцидентов</title>
-    <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
-    <style>
-        .nav-tabs .nav-link { font-weight: 500; }
-        .incident-card { cursor: default; }
-        .incident-link { cursor: pointer; min-width: 0; }
-        .remembered-card { border: 2px solid #ffc107 !important; background-color: #fff8e1; }
-        .bulk-bar { position: sticky; top: 0; z-index: 100; background: #fff; padding: 10px; border-bottom: 1px solid #ddd; }
-    </style>
-</head>
-<body>
-<div class="container mt-4 mb-5">
-    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <h2>🔍 Аудитор закрытия инцидентов</h2>
-        <div class="d-flex flex-wrap gap-2">
-            <button type="button" class="btn btn-outline-primary" id="dashboardCopyButton" onclick="copyDashboardLink()">📋 Дашборд</button>
-            <a href="{{ url_for('protocol') }}" class="btn btn-info">📄 Протокол ({{ remembered_count }})</a>
-            <a href="{{ url_for('protocols_history') }}" class="btn btn-outline-secondary">📜 История протоколов</a>
-            <form method="post" action="{{ url_for('clear_memory') }}" class="d-inline" onsubmit="return confirm('Очистить только память?')">
-                <input type="hidden" name="tab" value="{{ current_tab }}">
-                <input type="hidden" name="executor" value="{{ current_executor }}">
-                <button type="submit" class="btn btn-outline-warning">🗑 Очистить память</button>
-            </form>
-            <form method="post" action="{{ url_for('clear_incidents') }}" class="d-inline" onsubmit="return confirm('Очистить список инцидентов? Память сохранится.')">
-                <input type="hidden" name="tab" value="{{ current_tab }}">
-                <input type="hidden" name="executor" value="{{ current_executor }}">
-                <button type="submit" class="btn btn-outline-danger">🧹 Очистить список</button>
-            </form>
-        </div>
+{% extends "base.html" %}
+
+{% block title %}Инциденты · Контроль качества{% endblock %}
+{% block page_class %}dashboard-page{% endblock %}
+
+{% block content %}
+<section class="page-heading">
+    <div>
+        <p class="page-kicker">Операционный контроль</p>
+        <h1 class="page-title">Аудит закрытия инцидентов</h1>
     </div>
-
-    <form method="post" enctype="multipart/form-data" class="mb-4">
-        <input type="hidden" name="tab" value="{{ current_tab }}">
-        <input type="hidden" name="executor" value="{{ current_executor }}">
-        <div class="row g-2">
-            <div class="col-md-8">
-                <input type="file" name="file" class="form-control" accept=".xlsx" required>
-            </div>
-            <div class="col-md-4">
-                <button type="submit" class="btn btn-primary w-100">Загрузить Excel</button>
-            </div>
-        </div>
-        <a href="{{ url_for('export') }}" class="btn btn-success mt-2">📊 Выгрузить в Excel</a>
-    </form>
-
-    <div class="mb-3">
-        <form method="get" class="row g-2">
-            <input type="hidden" name="tab" value="{{ current_tab }}">
-            <div class="col-md-4">
-                <select name="executor" class="form-select" onchange="this.form.submit()">
-                    <option value="">Все исполнители</option>
-                    {% for executor in executors %}
-                    <option value="{{ executor }}" {% if executor == current_executor %}selected{% endif %}>{{ executor }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-md-6">
-                <input type="text" id="search" class="form-control" placeholder="Поиск по ID или исполнителю..." onkeyup="filterIncidents()">
-            </div>
+    <div class="page-actions">
+        <button type="button" class="btn btn-outline-primary" onclick="copyDashboardLink()">Скопировать ссылку на дашборд</button>
+        <form method="post" action="{{ url_for('protocol') }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-outline-primary">Протокол · {{ remembered_count }}</button>
         </form>
     </div>
+</section>
 
-    {% if problem_stats %}
-    <div class="card mb-4">
-        <div class="card-header"><strong>Типы проблем</strong></div>
-        <div class="card-body">
-            <ul class="list-group">
-                {% for ptype, count in problem_stats %}
-                <li class="list-group-item d-flex justify-content-between align-items-center">
-                    {{ ptype }} <span class="badge bg-primary rounded-pill">{{ count }}</span>
-                </li>
-                {% endfor %}
-            </ul>
+<section class="upload-surface surface-card" aria-labelledby="upload-title">
+    <div>
+        <h2 class="section-title" id="upload-title">Загрузить выгрузку</h2>
+        <p class="section-note">Поддерживается Excel `.xlsx`. Текущий набор заменится только после успешной проверки файла.</p>
+        <form method="post" enctype="multipart/form-data" class="upload-surface__form mt-3">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label class="visually-hidden" for="incidentFile">Файл с инцидентами</label>
+            <input id="incidentFile" type="file" name="file" class="form-control" accept=".xlsx" required>
+            <button type="submit" class="btn btn-primary">Загрузить Excel</button>
+        </form>
+    </div>
+    <div class="upload-surface__actions">
+        <a href="{{ url_for('export') }}" class="btn btn-outline-success">Выгрузить результат</a>
+        <a href="{{ url_for('protocols_history') }}" class="btn btn-outline-secondary">История протоколов</a>
+        <form method="post" action="{{ url_for('clear_memory') }}" class="d-inline" onsubmit="return confirm('Очистить текущую подборку для протокола? История прежних проверок сохранится.')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-outline-secondary">Очистить текущую подборку</button>
+        </form>
+        <form method="post" action="{{ url_for('clear_incidents') }}" class="d-inline" onsubmit="return confirm('Убрать загруженный список инцидентов? Текущий протокол и история сохранятся.')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-outline-danger">Очистить список</button>
+        </form>
+    </div>
+</section>
+
+<section class="kpi-grid" aria-label="Сводка по результатам">
+    <a class="kpi-card kpi-card--primary surface-card" href="{{ url_for('index', tab='all', date_from=date_from or None, date_to=date_to or None, executor=current_executor or None, search=current_search or None, only_repeated='1' if only_repeated else None) }}" data-dashboard-kpi="total">
+        <span class="kpi-card__label">Всего в выборке</span>
+        <strong class="kpi-card__value">{{ dashboard_stats.total }}</strong>
+    </a>
+    <a class="kpi-card kpi-card--danger surface-card" href="{{ url_for('index', tab='errors', date_from=date_from or None, date_to=date_to or None, executor=current_executor or None, search=current_search or None, only_repeated='1' if only_repeated else None) }}" data-dashboard-kpi="errors">
+        <span class="kpi-card__label">Требуют исправления</span>
+        <strong class="kpi-card__value">{{ dashboard_stats.errors }}</strong>
+    </a>
+    <a class="kpi-card kpi-card--warning surface-card" href="{{ url_for('index', tab='warnings', date_from=date_from or None, date_to=date_to or None, executor=current_executor or None, search=current_search or None, only_repeated='1' if only_repeated else None) }}" data-dashboard-kpi="warnings">
+        <span class="kpi-card__label">Есть замечания</span>
+        <strong class="kpi-card__value">{{ dashboard_stats.warnings }}</strong>
+    </a>
+    <a class="kpi-card kpi-card--success surface-card" href="{{ url_for('index', tab='correct', date_from=date_from or None, date_to=date_to or None, executor=current_executor or None, search=current_search or None, only_repeated='1' if only_repeated else None) }}" data-dashboard-kpi="correct">
+        <span class="kpi-card__label">Закрыты корректно</span>
+        <strong class="kpi-card__value">{{ dashboard_stats.correct }}</strong>
+    </a>
+    <a class="kpi-card kpi-card--muted surface-card" href="{{ url_for('index', tab='skipped', date_from=date_from or None, date_to=date_to or None, executor=current_executor or None, search=current_search or None, only_repeated='1' if only_repeated else None) }}" data-dashboard-kpi="skipped">
+        <span class="kpi-card__label">Не проверяются</span>
+        <strong class="kpi-card__value">{{ dashboard_stats.skipped + dashboard_stats.inwork }}</strong>
+    </a>
+    <a class="kpi-card kpi-card--info surface-card" href="{{ url_for('index', tab='all', date_from=date_from or None, date_to=date_to or None, executor=current_executor or None, search=current_search or None, only_repeated='1') }}" data-dashboard-kpi="repeated">
+        <span class="kpi-card__label">Проверялись ранее</span>
+        <strong class="kpi-card__value">{{ dashboard_stats.repeated }}</strong>
+    </a>
+</section>
+
+<section class="filter-surface surface-card" aria-labelledby="filter-title">
+    <div class="mb-3">
+        <h2 class="section-title" id="filter-title">Фильтры</h2>
+        <p class="section-note">Все фильтры применяются на сервере и не создают копии инцидентов.</p>
+    </div>
+    <form method="get" class="filter-grid">
+        <div>
+            <label class="form-label" for="search">ID или исполнитель</label>
+            <input id="search" type="search" name="search" class="form-control" value="{{ current_search }}" placeholder="Например, INC0001">
         </div>
+        <div>
+            <label class="form-label" for="executor">Исполнитель</label>
+            <select id="executor" name="executor" class="form-select">
+                <option value="">Все исполнители</option>
+                {% for executor in executors %}
+                <option value="{{ executor }}" {% if executor == current_executor %}selected{% endif %}>{{ executor }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="form-label" for="dateFrom">Дата с</label>
+            <input id="dateFrom" type="date" name="date_from" class="form-control" value="{{ date_from }}">
+        </div>
+        <div>
+            <label class="form-label" for="dateTo">Дата по</label>
+            <input id="dateTo" type="date" name="date_to" class="form-control" value="{{ date_to }}">
+        </div>
+        <div>
+            <div class="form-check form-switch filter-switch">
+                <input class="form-check-input" type="checkbox" role="switch" id="onlyRepeated" name="only_repeated" value="1" {% if only_repeated %}checked{% endif %}>
+                <label class="form-check-label ms-2" for="onlyRepeated">Только проверявшиеся ранее ({{ repeated_count }})</label>
+            </div>
+        </div>
+        <input type="hidden" name="tab" value="{{ active_tab }}">
+        <div class="filter-actions">
+            <button type="submit" class="btn btn-primary">Применить</button>
+            <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">Сбросить</a>
+        </div>
+    </form>
+</section>
+
+{% if problem_stats or remembered_list %}
+<div class="row g-3 mb-3">
+    {% if problem_stats %}
+    <div class="col-lg-6">
+        <details class="secondary-surface surface-card">
+            <summary class="section-title">Частые технические признаки</summary>
+            <div class="d-flex flex-wrap gap-2 mt-3">
+                {% for problem_type, count in problem_stats %}
+                <span class="micro-pill">{{ problem_type }} · {{ count }}</span>
+                {% endfor %}
+            </div>
+        </details>
     </div>
     {% endif %}
-
     {% if remembered_list %}
-    <div class="card mb-4 border-warning">
-        <div class="card-header bg-warning text-dark"><strong>📌 Память ({{ remembered_count }})</strong></div>
-        <div class="card-body">
-            <ul class="list-group">
-                {% for inc_id, data in remembered_list.items() %}
-                <li class="list-group-item d-flex justify-content-between align-items-center gap-3">
+    <div class="col-lg-6">
+        <details class="secondary-surface surface-card">
+            <summary class="section-title">Текущий протокол · {{ remembered_count }}</summary>
+            <ul class="memory-list mt-3">
+                {% for incident_id, data in remembered_list.items() %}
+                <li class="memory-item">
                     <div>
-                        {% if inc_id in incident_ids %}
-                        <a href="{{ url_for('incident_detail', inc_id=inc_id, tab=current_tab, executor=current_executor or none) }}">{{ inc_id }}</a>
-                        {% else %}
-                        <strong>{{ inc_id }}</strong>
-                        {% endif %}
-                        — {{ data.executor }}
-                        {% if data.tag %}<span class="badge bg-danger ms-2">{{ data.tag }}</span>{% endif %}
-                        {% if data.comment %}<br><small class="text-muted">{{ data.comment }}</small>{% endif %}
+                        <a href="{{ url_for('incident_detail', inc_id=incident_id) }}"><strong>{{ incident_id }}</strong></a>
+                        <span class="text-muted">· {{ data.executor }}</span>
+                        {% if data.tag %}<span class="micro-pill ms-1">{{ data.tag }}</span>{% endif %}
+                        {% if data.comment %}<div class="small text-muted mt-1">{{ data.comment }}</div>{% endif %}
                     </div>
-                    <form method="post" action="{{ url_for('unremember_incident', inc_id=inc_id) }}" class="m-0">
-                        <input type="hidden" name="tab" value="{{ current_tab }}">
-                        <input type="hidden" name="executor" value="{{ current_executor }}">
-                        <input type="hidden" name="return_to" value="index">
-                        <button type="submit" class="btn btn-sm btn-outline-danger" aria-label="Убрать из памяти">✕</button>
+                    <form method="post" action="{{ url_for('unremember_incident', inc_id=incident_id) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <input type="hidden" name="tab" value="{{ active_tab }}">
+                        <button type="submit" class="btn btn-sm btn-outline-danger">Убрать</button>
                     </form>
                 </li>
                 {% endfor %}
             </ul>
-        </div>
+        </details>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+<div class="bulk-bar surface-card d-none" id="bulkBar">
+    <form method="post" action="{{ url_for('bulk_remember') }}" class="bulk-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="tab" value="{{ active_tab }}">
+        <strong id="selectedCount">0 выбрано</strong>
+        <select name="bulk_tag" class="form-select form-select-sm bulk-form__select">
+            <option value="">Без тега</option>
+            <option value="WARNING1">WARNING1</option>
+            <option value="WARNING2">WARNING2</option>
+            <option value="WARNING3">WARNING3</option>
+        </select>
+        <button type="submit" class="btn btn-warning btn-sm">Добавить выбранные в текущий протокол</button>
+        <div id="bulkIds"></div>
+    </form>
+</div>
+
+{% set tab_items = [
+    ('all', 'Все'),
+    ('errors', 'Требуют исправления'),
+    ('warnings', 'Есть замечания'),
+    ('correct', 'Корректно'),
+    ('inwork', 'В работе'),
+    ('skipped', 'Проверка не проводится')
+] %}
+<nav class="status-tabs" aria-label="Фильтр по итоговому статусу" data-active-tab="{{ active_tab }}">
+    {% for tab_key, tab_label in tab_items %}
+    <a class="status-tab {% if active_tab == tab_key %}is-active{% endif %}"
+       href="{{ url_for('index', tab=tab_key, date_from=date_from or None, date_to=date_to or None, executor=current_executor or None, search=current_search or None, only_repeated='1' if only_repeated else None) }}"
+       {% if active_tab == tab_key %}aria-current="page"{% endif %}>
+        {{ tab_label }} <span class="status-tab__count">{{ incident_groups[tab_key]|length }}</span>
+    </a>
+    {% endfor %}
+</nav>
+
+{% set displayed_incidents = incident_groups[active_tab] %}
+<section class="incident-grid" aria-label="Инциденты">
+    {% if dashboard_stats.total == 0 %}
+    <div class="empty-state surface-card">
+        <div class="empty-state__icon">XL</div>
+        <h2 class="section-title">Загрузите файл с инцидентами</h2>
+        <p class="section-note">После загрузки здесь появятся результаты и понятные рекомендации.</p>
+    </div>
+    {% elif not displayed_incidents %}
+    <div class="empty-state surface-card">
+        <div class="empty-state__icon">0</div>
+        <h2 class="section-title">В этой категории нет инцидентов</h2>
+        <p class="section-note">Измените вкладку или сбросьте фильтры.</p>
+        <a href="{{ url_for('index') }}" class="btn btn-outline-primary mt-3">Показать все</a>
     </div>
     {% endif %}
 
-    <div class="bulk-bar mb-3 d-none" id="bulkBar">
-        <form method="post" action="{{ url_for('bulk_remember') }}" class="d-flex flex-wrap gap-2 align-items-center">
-            <input type="hidden" name="tab" value="{{ current_tab }}">
-            <input type="hidden" name="executor" value="{{ current_executor }}">
-            <span id="selectedCount">0 выбрано</span>
-            <select name="bulk_tag" class="form-select form-select-sm" style="width:160px">
-                <option value="">Без тега</option>
-                <option value="WARNING1">WARNING1</option>
-                <option value="WARNING2">WARNING2</option>
-                <option value="WARNING3">WARNING3</option>
-            </select>
-            <button type="submit" class="btn btn-warning btn-sm">📌 Добавить выбранные в память</button>
-            <div id="bulkIds"></div>
-        </form>
-    </div>
-
-    <ul class="nav nav-tabs mb-4">
-        <li class="nav-item"><a class="nav-link {% if current_tab == 'correct' %}active{% endif %}" data-bs-toggle="tab" href="#correct">Корректно ({{ correct|length }})</a></li>
-        <li class="nav-item"><a class="nav-link {% if current_tab == 'remarks' %}active{% endif %}" data-bs-toggle="tab" href="#remarks">Есть замечания ({{ remarks|length }})</a></li>
-        <li class="nav-item"><a class="nav-link {% if current_tab == 'inwork' %}active{% endif %}" data-bs-toggle="tab" href="#inwork">В работе ({{ in_work|length }})</a></li>
-        <li class="nav-item"><a class="nav-link {% if current_tab == 'test' %}active{% endif %}" data-bs-toggle="tab" href="#test">Тестовые ({{ test|length }})</a></li>
-    </ul>
-
-    <div class="tab-content">
-        {% for category, data in [('correct', correct), ('remarks', remarks), ('inwork', in_work), ('test', test)] %}
-        <div class="tab-pane fade {% if category == current_tab %}show active{% endif %}" id="{{ category }}">
-            {% for inc in data %}
-            {% set incident_id = inc.get('ID инцидента', '')|string %}
-            <div class="border p-3 mb-2 incident-card d-flex align-items-center {% if incident_id in remembered_list %}remembered-card{% endif %}">
-                <input type="checkbox" class="form-check-input me-3 bulk-check" value="{{ incident_id }}" onchange="updateBulk()" aria-label="Выбрать инцидент {{ incident_id }}">
-                <div class="flex-grow-1 incident-link" data-url="{{ url_for('incident_detail', inc_id=incident_id, tab=category, executor=current_executor or none) }}" onclick="window.location=this.dataset.url">
-                    <strong>{{ incident_id }}</strong> — {{ inc.get('Исполнитель', '') }}
-                    {% if incident_id in remembered_list %}<span class="badge bg-warning text-dark">📌</span>{% endif %}
-                </div>
-                {% if inc.get('analysis') %}
-                <span class="badge bg-{{ 'success' if 'корректно' in inc.analysis.Статус.lower() else 'warning' }} ms-2">{{ inc.analysis.Статус }}</span>
-                {% else %}
-                <span class="badge bg-secondary ms-2">Анализ не проводится</span>
-                {% endif %}
+    {% for inc in displayed_incidents %}
+    {% set outcome = inc.analysis.outcome %}
+    {% set error_checks = inc.analysis.checks | selectattr('severity', 'equalto', 'error') | list %}
+    {% set warning_checks = inc.analysis.checks | selectattr('severity', 'equalto', 'warning') | list %}
+    <article class="incident-card surface-card {% if inc.get('is_repeated') %}is-history{% endif %} {% if inc.get('ID инцидента') in remembered_list %}is-remembered{% endif %}"
+             data-outcome="{{ outcome }}">
+        <div class="incident-card__top">
+            <div>
+                <span class="incident-card__eyebrow">ИНЦИДЕНТ</span>
+                <h2 class="incident-card__title">{{ inc.get('ID инцидента') }}</h2>
             </div>
-            {% else %}
-            <p class="text-muted">В этой категории нет инцидентов.</p>
-            {% endfor %}
+            <span class="status-pill status-pill--{{ outcome }}">{{ inc.analysis.Статус }}</span>
         </div>
-        {% endfor %}
-    </div>
-</div>
 
-<script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
+        <p class="incident-card__subject">{{ inc.subject_display }}</p>
+        <div class="incident-card__meta">
+            <span>{{ inc.executor_display }}</span>
+            {% if inc.get('is_repeated') %}<span class="incident-state incident-state--history">↺ Проверялся ранее</span>{% endif %}
+            {% if inc.get('ID инцидента') in remembered_list %}<span class="incident-state incident-state--current">● В текущем протоколе</span>{% endif %}
+        </div>
+
+        <div class="incident-card__counts">
+            <span class="incident-count incident-count--error" data-count="errors">Ошибки: {{ inc.analysis.summary.error }}</span>
+            <span class="incident-count incident-count--warning" data-count="warnings">Замечания: {{ inc.analysis.summary.warning }}</span>
+        </div>
+
+        <div class="incident-card__summary">
+            <strong>Краткий итог.</strong>
+            {% if error_checks or warning_checks %}
+                Замечаний: {{ error_checks|length + warning_checks|length }}.
+            {% elif outcome == 'passed' %}
+                Все обязательные проверки пройдены.
+            {% elif outcome == 'skipped' %}
+                {{ inc.analysis.checks[0].message if inc.analysis.checks else 'Проверка не требуется.' }}
+            {% else %}
+                Результат требует внимания аудитора.
+            {% endif %}
+        </div>
+
+        {% if error_checks or warning_checks %}
+        <ul class="incident-card__issues">
+            {% for check in (error_checks + warning_checks)[:2] %}<li>{{ check.title }}</li>{% endfor %}
+        </ul>
+        {% if error_checks|length + warning_checks|length > 2 %}
+        <details class="incident-card__more">
+            <summary>Ещё {{ error_checks|length + warning_checks|length - 2 }}</summary>
+            <ul class="incident-card__issues mt-2">
+                {% for check in (error_checks + warning_checks)[2:] %}<li>{{ check.title }}</li>{% endfor %}
+            </ul>
+        </details>
+        {% endif %}
+        {% endif %}
+
+        {% if inc.get('is_repeated') and inc.get('history') %}
+        <p class="incident-card__summary">
+            Ранее: {% for row in inc.history[:3] %}{{ row.check_date }}{% if row.tag %} ({{ row.tag }}){% endif %}{% if not loop.last %}; {% endif %}{% endfor %}
+        </p>
+        {% endif %}
+
+        <div class="incident-card__footer">
+            <label class="form-check-label small">
+                <input type="checkbox" class="form-check-input bulk-check" value="{{ inc.get('ID инцидента') }}" onchange="updateBulk()">
+                Выбрать
+            </label>
+            <div class="incident-card__actions">
+                {% if inc.ai_state.status == 'completed' %}
+                <a class="btn btn-sm btn-outline-success" href="{{ url_for('incident_detail', inc_id=inc.get('ID инцидента'), tab=active_tab, view='ai') }}">AI-отчёт готов</a>
+                {% elif inc.ai_state.status == 'running' %}
+                <button type="button" class="btn btn-sm btn-outline-secondary ai-action"
+                        data-ai-url="{{ url_for('run_ai_analysis', inc_id=inc.get('ID инцидента')) }}"
+                        data-ai-status-url="{{ url_for('ai_analysis_status', inc_id=inc.get('ID инцидента')) }}"
+                        data-ai-detail-url="{{ url_for('incident_detail', inc_id=inc.get('ID инцидента'), tab=active_tab, view='ai') }}"
+                        data-ai-status="running" data-csrf-token="{{ csrf_token }}" disabled>Анализируется…</button>
+                {% else %}
+                <button type="button" class="btn btn-sm btn-outline-primary ai-action"
+                        data-ai-url="{{ url_for('run_ai_analysis', inc_id=inc.get('ID инцидента')) }}"
+                        data-ai-status-url="{{ url_for('ai_analysis_status', inc_id=inc.get('ID инцидента')) }}"
+                        data-ai-detail-url="{{ url_for('incident_detail', inc_id=inc.get('ID инцидента'), tab=active_tab, view='ai') }}"
+                        data-ai-status="{{ inc.ai_state.status }}" data-csrf-token="{{ csrf_token }}">{% if inc.ai_state.status == 'failed' %}Повторить AI-анализ{% else %}AI-анализ{% endif %}</button>
+                {% endif %}
+                <a class="btn btn-sm btn-primary" href="{{ url_for('incident_detail', inc_id=inc.get('ID инцидента'), tab=active_tab) }}">Открыть инцидент</a>
+            </div>
+        </div>
+    </article>
+    {% endfor %}
+</section>
+{% endblock %}
+
+{% block scripts %}
 <script>
-function filterIncidents() {
-    const input = document.getElementById('search').value.toLowerCase();
-    document.querySelectorAll('.incident-card').forEach(card => {
-        card.style.display = card.textContent.toLowerCase().includes(input) ? '' : 'none';
-    });
-}
-
 function updateBulk() {
-    const checks = document.querySelectorAll('.bulk-check:checked');
+    const checked = document.querySelectorAll('.bulk-check:checked');
     const bar = document.getElementById('bulkBar');
     const count = document.getElementById('selectedCount');
-    const idsContainer = document.getElementById('bulkIds');
-
-    idsContainer.replaceChildren();
-    if (checks.length === 0) {
-        bar.classList.add('d-none');
-        count.textContent = '0 выбрано';
-        return;
-    }
-
-    bar.classList.remove('d-none');
-    count.textContent = checks.length + ' выбрано';
-    checks.forEach(check => {
+    const ids = document.getElementById('bulkIds');
+    bar.classList.toggle('d-none', checked.length === 0);
+    count.textContent = checked.length + ' выбрано';
+    ids.replaceChildren();
+    checked.forEach((checkbox) => {
         const input = document.createElement('input');
         input.type = 'hidden';
         input.name = 'ids';
-        input.value = check.value;
-        idsContainer.appendChild(input);
+        input.value = checkbox.value;
+        ids.appendChild(input);
     });
 }
 
 async function copyDashboardLink() {
-    const button = document.getElementById('dashboardCopyButton');
-    try {
-        await navigator.clipboard.writeText('https://sdpbi-analytics.ca.sbrf.ru/bt_p1173/superset/dashboard/847/');
-        const original = button.textContent;
-        button.textContent = '✅ Скопировано';
-        setTimeout(() => { button.textContent = original; }, 2000);
-    } catch (error) {
-        alert('Не удалось скопировать ссылку');
-    }
+    await navigator.clipboard.writeText('https://sdpbi-analytics.ca.sbrf.ru/bt_p1173/superset/dashboard/847/');
 }
 </script>
-</body>
-</html>
+{% endblock %}

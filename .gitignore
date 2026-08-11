@@ -14,6 +14,8 @@ cache/*
 !cache/.gitkeep
 uploads/
 TA/uploads/
+TA/certs/*
+!TA/certs/README.md
 GD/cache/*
 !GD/cache/.gitkeep
 GD/test.pem
