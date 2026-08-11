@@ -48,6 +48,7 @@ def init_db():
             request_status TEXT NOT NULL
                 CHECK(request_status IN ('running', 'completed', 'failed')),
             analysis_json TEXT,
+            raw_response TEXT,
             last_error_code TEXT DEFAULT '',
             started_at TEXT,
             completed_at TEXT,
@@ -55,6 +56,12 @@ def init_db():
             UNIQUE(incident_id, content_hash, prompt_version, model)
         )
     ''')
+    columns = {
+        row[1]
+        for row in c.execute("PRAGMA table_info(ai_analyses)").fetchall()
+    }
+    if "raw_response" not in columns:
+        c.execute("ALTER TABLE ai_analyses ADD COLUMN raw_response TEXT")
     c.execute('''
         CREATE INDEX IF NOT EXISTS idx_ai_analyses_incident
         ON ai_analyses(incident_id)
@@ -178,21 +185,26 @@ def complete_ai_analysis(
     model,
     analysis,
     *,
+    raw_response="",
     now=None,
 ):
     key = _ai_key(incident_id, content_hash, prompt_version, model)
     stamp = _timestamp(now)
-    payload = json.dumps(analysis, ensure_ascii=False, separators=(",", ":"))
+    payload = (
+        json.dumps(analysis, ensure_ascii=False, separators=(",", ":"))
+        if analysis is not None
+        else None
+    )
     conn = get_conn()
     try:
         with conn:
             cursor = conn.execute('''
                 UPDATE ai_analyses
-                SET request_status = 'completed', analysis_json = ?,
+                SET request_status = 'completed', analysis_json = ?, raw_response = ?,
                     last_error_code = '', completed_at = ?, updated_at = ?
                 WHERE incident_id = ? AND content_hash = ?
                   AND prompt_version = ? AND model = ?
-            ''', (payload, stamp, stamp, *key))
+            ''', (payload, str(raw_response or ""), stamp, stamp, *key))
             if cursor.rowcount != 1:
                 raise sqlite3.IntegrityError("AI analysis was not claimed")
     finally:
