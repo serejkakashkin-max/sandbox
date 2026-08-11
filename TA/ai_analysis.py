@@ -380,28 +380,45 @@ def _normalize_verdict(value: Any) -> str:
     return aliases.get(text, text)
 
 
+def _raw_ai_report(raw_text: str, reason: str = "") -> dict[str, Any]:
+    """Preserve a useful GigaChat answer even when structured parsing is unavailable."""
+    return {
+        "structured": False,
+        "raw_response": raw_text.strip(),
+        "parse_note": reason,
+    }
+
+
 def parse_ai_report(raw_text: str) -> dict[str, Any]:
     if not isinstance(raw_text, str) or not raw_text.strip():
         raise AIReportFormatError("GigaChat вернул пустой ответ")
+
+    original_text = raw_text.strip()
     try:
-        raw_report = json.loads(_extract_json_text(raw_text))
-    except json.JSONDecodeError as exc:
-        raise AIReportFormatError("Ответ GigaChat не является корректным JSON") from exc
+        raw_report = json.loads(_extract_json_text(original_text))
+    except json.JSONDecodeError:
+        return _raw_ai_report(original_text, "Ответ не является корректным JSON")
+
     if not isinstance(raw_report, Mapping):
-        raise AIReportFormatError("Ответ GigaChat должен быть JSON-объектом")
+        return _raw_ai_report(original_text, "Ответ JSON не является объектом")
 
     verdict = _normalize_verdict(raw_report.get("verdict"))
     if verdict not in ALLOWED_VERDICTS:
-        raise AIReportFormatError("Недопустимая или отсутствующая итоговая оценка")
+        return _raw_ai_report(original_text, "Не удалось определить структурированный verdict")
     summary = normalize_ai_value(raw_report.get("summary"))
     if not summary:
-        raise AIReportFormatError("В ответе отсутствует краткое заключение summary")
+        return _raw_ai_report(original_text, "В структурированном ответе отсутствует summary")
 
     facts = raw_report.get("facts")
     if not isinstance(facts, Mapping):
         facts = raw_report
 
-    report: dict[str, Any] = {"verdict": verdict, "summary": summary}
+    report: dict[str, Any] = {
+        "structured": True,
+        "raw_response": original_text,
+        "verdict": verdict,
+        "summary": summary,
+    }
     for field in FACT_FIELDS:
         report[field] = _normalize_fact(facts.get(field, raw_report.get(field)), field)
 
