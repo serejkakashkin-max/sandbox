@@ -114,7 +114,14 @@ def _default_client_factory(**kwargs):
 
 
 def _exception_code(error):
-    if isinstance(error, TimeoutError):
+    error_name = type(error).__name__
+    if isinstance(error, TimeoutError) or error_name in {
+        "TimeoutException",
+        "ConnectTimeout",
+        "ReadTimeout",
+        "WriteTimeout",
+        "PoolTimeout",
+    }:
         return "timeout"
     return {
         "AuthenticationError": "authentication",
@@ -124,7 +131,11 @@ def _exception_code(error):
         "GigaChatException": "service_error",
         "ConnectError": "connection",
         "ConnectionError": "connection",
-    }.get(type(error).__name__, "unknown")
+        "ReadError": "connection",
+        "WriteError": "connection",
+        "NetworkError": "connection",
+        "SSLError": "connection",
+    }.get(error_name, "unknown")
 
 
 class GigaChatHelper:
@@ -137,6 +148,8 @@ class GigaChatHelper:
         self.client_factory = client_factory or _default_client_factory
 
     def _client_parameters(self):
+        # Параметры соответствуют проверенной корпоративной интеграции GigaChat.
+        # max_retries не передаём: gigachat==0.1.42.post2 его не поддерживает.
         return {
             "base_url": self.config.base_url,
             "ca_bundle_file": str(self.config.ca_bundle_file),
@@ -147,7 +160,6 @@ class GigaChatHelper:
             "scope": self.config.scope,
             "timeout": self.config.timeout,
             "verify_ssl_certs": True,
-            "max_retries": 0,
         }
 
     def generate(self, prompt):
@@ -172,4 +184,3 @@ class GigaChatHelper:
                         close()
                     except Exception:
                         pass
-
