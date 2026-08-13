@@ -29,6 +29,7 @@ def create_app() -> Flask:
     def sandbox_index() -> str:
         ta_module_url = _join_public_path(request.script_root, "/ta/incident-auditor")
         gd_module_url = _join_public_path(request.script_root, "/gd/release-monitor")
+        ca_module_url = _join_public_path(request.script_root, "/ca/zpi-assistant")
         modules: list[dict[str, Any]] = [
             {
                 "owner_code": "TA",
@@ -45,6 +46,14 @@ def create_app() -> Flask:
                 "description": "Аналитический мониторинг и статистика релизов",
                 "status": "EXPERIMENTAL",
                 "url": gd_module_url,
+            },
+            {
+                "owner_code": "CA",
+                "owner_name": "Частухин Александр",
+                "title": "Помощник ЗПИ",
+                "description": "Сценарный разбор пользовательских логов и подготовка заявки на смежную систему",
+                "status": "EXPERIMENTAL",
+                "url": ca_module_url,
             },
         ]
         parent_url = os.getenv("SANDBOX_PARENT_URL", "/").strip() or "/"

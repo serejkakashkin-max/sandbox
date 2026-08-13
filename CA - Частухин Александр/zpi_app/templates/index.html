@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+{% block title %}Проверка транскрибации · Помощник ЗПИ{% endblock %}
+{% block content %}
+<section class="hero">
+  <div>
+    <p class="eyebrow">Сценарий 01</p>
+    <h1>Не сформировалось резюме встречи</h1>
+    <p class="hero-copy">
+      Загрузите выгрузки логов и укажите известный ID встречи. Сервис найдёт отправленные
+      чанки, UUID записи и ответ VOICE360, а затем предложит дальнейшее действие.
+    </p>
+  </div>
+  <ol class="flow" aria-label="Этапы анализа">
+    <li><span>1</span>Загрузка</li>
+    <li><span>2</span>Проверка</li>
+    <li><span>3</span>Готовая ЗПИ</li>
+  </ol>
+</section>
+
+{% if error %}
+<div class="alert alert-error" role="alert">
+  <strong>Не удалось выполнить анализ</strong>
+  <span>{{ error }}</span>
+</div>
+{% endif %}
+
+<section class="panel upload-panel">
+  <div class="panel-heading">
+    <div>
+      <p class="step-label">Исходные данные</p>
+      <h2>Загрузите логи</h2>
+    </div>
+    <span class="format-chip">TXT · XLSX</span>
+  </div>
+  <form method="post" enctype="multipart/form-data" class="analysis-form" data-analysis-form>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="field-grid">
+      <label class="field field-wide">
+        <span>ID встречи <b aria-hidden="true">*</b></span>
+        <input
+          name="meeting_id"
+          value="{{ form.meeting_id }}"
+          placeholder="70F78AD12F724E44AF9AF8CC4673D5CC"
+          pattern="[0-9A-Fa-f]{32}"
+          maxlength="32"
+          autocomplete="off"
+          required
+        >
+        <small>Укажите ID из заявки: 32 символа, без пробелов и дефисов</small>
+      </label>
+      <label class="field">
+        <span>Номер ЗПИ</span>
+        <input name="incident_number" value="{{ form.incident_number }}" placeholder="INCT0000533679" autocomplete="off">
+      </label>
+      <label class="field">
+        <span>Логин пользователя</span>
+        <input name="user_login" value="{{ form.user_login }}" placeholder="borzdyko-aa" autocomplete="off">
+      </label>
+      <label class="field">
+        <span>Дата и время обращения</span>
+        <input type="datetime-local" name="reported_at" value="{{ form.reported_at }}">
+      </label>
+    </div>
+
+    <label class="drop-zone" data-drop-zone>
+      <input type="file" name="logs" accept=".txt,.xlsx" multiple required data-file-input>
+      <span class="upload-icon" aria-hidden="true">↑</span>
+      <strong>Выберите файлы или перетащите их сюда</strong>
+      <span>Можно загрузить несколько TXT/XLSX-файлов одновременно</span>
+      <output data-file-summary>Файлы не выбраны</output>
+    </label>
+
+    <div class="form-footer">
+      <p><span class="privacy-dot"></span>Данные не отправляются во внешние сервисы</p>
+      <button class="primary-button" type="submit" data-submit>
+        <span>Проанализировать логи</span>
+        <span aria-hidden="true">→</span>
+      </button>
+    </div>
+  </form>
+</section>
+
+{% if analysis %}
+<section class="results" id="results" tabindex="-1">
+  <div class="result-header">
+    <div>
+      <p class="eyebrow">Результат анализа</p>
+      <h2>{{ analysis.conclusion_title }}</h2>
+    </div>
+    <span class="status-pill {{ 'status-ok' if analysis.outcome == 'transcription_missing' else 'status-warn' }}">
+      {% if analysis.outcome == "transcription_missing" %}Готово к ЗПИ
+      {% elif analysis.outcome == "transcription_found" %}Перепроверить
+      {% elif analysis.outcome == "chunks_missing" %}Проверить запись
+      {% else %}Нужны логи{% endif %}
+    </span>
+  </div>
+
+  <section class="panel conclusion-panel conclusion-{{ analysis.outcome }}">
+    <div>
+      <p class="step-label">Экспертный вывод</p>
+      <h2>{{ analysis.conclusion_title }}</h2>
+      <p>{{ analysis.conclusion_text }}</p>
+    </div>
+    {% if analysis.outcome == "chunks_missing" %}
+    <aside class="microphone-hint">
+      <strong>Как проверить ошибку микрофона</strong>
+      <p>Возьмите табельный номер сотрудника, найдите его профиль в Clickstream и выберите дату начала встречи.</p>
+      <a href="https://clickstream.sberbank.ru/frontend/fokus/audience/web-profiles" target="_blank" rel="noopener noreferrer">Открыть Clickstream ↗</a>
+    </aside>
+    {% endif %}
+  </section>
+
+  <div class="metrics">
+    <article>
+      <span>Записей прочитано</span>
+      <strong>{{ analysis.total_records }}</strong>
+    </article>
+    <article>
+      <span>Совпадений сценария</span>
+      <strong>{{ analysis.matched_records }}</strong>
+    </article>
+    <article>
+      <span>Групп UUID</span>
+      <strong>{{ analysis.groups|length }}</strong>
+    </article>
+    <article>
+      <span>Ответов VOICE360</span>
+      <strong>{{ analysis.voice_responses|length }}</strong>
+    </article>
+  </div>
+
+  {% if analysis.warnings %}
+  <div class="alert alert-warning">
+    <strong>Обратите внимание</strong>
+    <ul>
+      {% for warning in analysis.warnings %}<li>{{ warning }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if analysis.selected_group %}
+  <section class="panel evidence-panel">
+    <div class="panel-heading">
+      <div>
+        <p class="step-label">Найденная запись</p>
+        <h2>Основной UUID</h2>
+      </div>
+      <span class="status-pill status-ok">{{ analysis.selected_group.rows|length }} чанков</span>
+    </div>
+    <dl class="key-values">
+      <div class="key-wide"><dt>UUID</dt><dd><code>{{ analysis.selected_group.uuid }}</code></dd></div>
+      <div><dt>Время по Москве</dt><dd>{{ analysis.selected_group.representative.local_time or "—" }}</dd></div>
+      <div><dt>Диапазон чанков</dt><dd>{{ analysis.selected_group.parts|first }}–{{ analysis.selected_group.parts|last }}</dd></div>
+      <div><dt>Начало группы</dt><dd>{{ analysis.selected_group.first_local_time or "—" }}</dd></div>
+      <div><dt>Конец группы</dt><dd>{{ analysis.selected_group.last_local_time or "—" }}</dd></div>
+    </dl>
+    <p class="explanation">{{ analysis.selection_explanation }}</p>
+  </section>
+  {% endif %}
+
+  {% if analysis.groups|length > 1 %}
+  <section class="panel table-panel">
+    <div class="panel-heading compact"><h2>Все найденные UUID</h2></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>UUID</th><th>Чанки</th><th>Период по Москве</th><th>isLastRecord</th><th>Роль</th></tr></thead>
+        <tbody>
+        {% for group in analysis.groups %}
+          <tr>
+            <td><code>{{ group.uuid }}</code></td>
+            <td>{{ group.rows|length }}</td>
+            <td>{{ group.first_local_time or "—" }}<br><span class="muted">{{ group.last_local_time or "—" }}</span></td>
+            <td>{{ "да" if group.has_final_marker else "нет" }}</td>
+            <td>{{ "основной" if group.uuid == analysis.selected_group.uuid else "альтернативный" }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if analysis.selected_response %}
+  <section class="panel response-panel">
+    <div>
+      <p class="step-label">VOICE360</p>
+      <h2>Транскрибация {{ "найдена" if analysis.selected_response.value else "не найдена" }}</h2>
+      <p>{{ analysis.selected_response.message }}</p>
+    </div>
+    <span class="boolean-badge {{ 'boolean-true' if analysis.selected_response.value else 'boolean-false' }}">
+      {{ "true" if analysis.selected_response.value else "false" }}
+    </span>
+  </section>
+  {% endif %}
+
+  {% if analysis.ticket_text and analysis.outcome == "transcription_found" %}
+  <section class="panel decision-panel">
+    <div>
+      <p class="step-label">Если пользователь не согласен</p>
+      <h2>Всё равно требуется обращение к смежной системе?</h2>
+      <p>Если повторная проверка не помогла, сформируйте ЗПИ с найденными доказательствами.</p>
+    </div>
+    <button type="button" class="secondary-button" data-reveal-target="optional-ticket">Сформировать ЗПИ</button>
+  </section>
+  {% endif %}
+
+  {% if analysis.ticket_text %}
+  <section class="panel ticket-panel{% if analysis.outcome == 'transcription_found' %} is-hidden{% endif %}"{% if analysis.outcome == 'transcription_found' %} id="optional-ticket"{% endif %}>
+    <div class="panel-heading">
+      <div>
+        <p class="step-label">{{ "Дополнительный вариант" if analysis.outcome == "transcription_found" else "Готовый результат" }}</p>
+        <h2>Текст заявки на смежную систему</h2>
+      </div>
+      <button type="button" class="copy-button" data-copy-target="ticket-text">Скопировать</button>
+    </div>
+    <pre id="ticket-text">{{ analysis.ticket_text }}</pre>
+  </section>
+  {% endif %}
+
+  <details class="panel details-panel">
+    <summary>Технические сведения и источники</summary>
+    <div class="details-content">
+      <h3>Загруженные файлы</h3>
+      <ul class="source-list">
+        {% for stat in parse_result.file_stats %}
+        <li><strong>{{ stat.name }}</strong>{% if stat.sheet %} · {{ stat.sheet }}{% endif %}: {{ stat.records }} записей{% if stat.skipped %}, пропущено {{ stat.skipped }}{% endif %}</li>
+        {% endfor %}
+      </ul>
+      {% if parse_result.issues %}
+      <h3>Нераспознанные строки</h3>
+      <ul class="source-list">
+        {% for issue in parse_result.issues[:20] %}
+        <li>{{ issue.source_name }}{% if issue.row_number %}, строка {{ issue.row_number }}{% endif %}: {{ issue.message }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if analysis.selected_group %}
+      <h3>Строка, выбранная для времени записи</h3>
+      <p><code>{{ analysis.selected_group.representative.source }}</code></p>
+      <p class="log-excerpt">{{ analysis.selected_group.representative.message_excerpt }}</p>
+      {% endif %}
+      {% if analysis.selected_response %}
+      <h3>Строка выбранного ответа</h3>
+      <p><code>{{ analysis.selected_response.source }}</code></p>
+      {% endif %}
+    </div>
+  </details>
+</section>
+{% endif %}
+{% endblock %}

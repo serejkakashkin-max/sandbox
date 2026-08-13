@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru" data-theme="light" data-bs-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>{% block title %}Помощник ЗПИ{% endblock %}</title>
+  <script src="{{ url_for('static', filename='oplot-theme.js') }}"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <div class="topbar-context">
+      <a class="oplot-brand" href="{{ sandbox_home_url }}" aria-label="Вернуться в Sandbox">OPLOT</a>
+      <span class="topbar-separator" aria-hidden="true">/</span>
+      <a class="product-brand" href="{{ url_for('main.index') }}">
+        <span class="brand-mark" aria-hidden="true">ЗПИ</span>
+        <span>
+          <strong>Помощник разбора логов</strong>
+          <small>CA · Частухин Александр</small>
+        </span>
+      </a>
+    </div>
+    <div class="topbar-actions">
+      <span class="local-badge">Локальная обработка</span>
+      <button class="theme-toggle" type="button" data-oplot-theme-toggle aria-pressed="false" aria-label="Переключить тему">
+        <svg class="theme-icon theme-icon-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.2 15.3A8.4 8.4 0 0 1 8.7 3.8 8.5 8.5 0 1 0 20.2 15.3Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <svg class="theme-icon theme-icon-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <span class="theme-label">Тёмная тема</span>
+      </button>
+    </div>
+  </header>
+  <main class="page-shell">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="site-footer">
+    <span>Sandbox · CA · Помощник ЗПИ</span>
+    <span>Загруженные файлы обрабатываются в памяти и не сохраняются приложением.</span>
+  </footer>
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</body>
+</html>

@@ -1,0 +1,1 @@
+"className":"LoggingAspect","serverEventDatetime":"2026-08-03T10:21:21.043Z","message":"VOICE360_CHECK_MEETINGS_TRANSCRIPTION. Проверка наличия транскрибации по встрече. Ответ: {\"70F78AD12F724E44AF9AF8CC4673D5CC\":false}"

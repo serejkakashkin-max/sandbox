@@ -1,0 +1,19 @@
+[project]
+name = "zpi-log-assistant"
+version = "0.1.0"
+description = "Flask-приложение для сценарного анализа пользовательских логов и подготовки ЗПИ."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "Flask>=3.0,<4",
+    "openpyxl>=3.1,<4",
+    "tzdata>=2025.2",
+    "waitress>=3.0,<4",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0,<9"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
