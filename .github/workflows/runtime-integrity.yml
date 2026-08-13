@@ -6,6 +6,7 @@ on:
     paths:
       - pyproject.toml
       - TA/requirements-extra.txt
+      - scripts/smoke_check.py
   workflow_dispatch:
 
 permissions:
