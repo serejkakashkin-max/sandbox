@@ -13,7 +13,7 @@ from sandbox_app import PublicPrefixMiddleware, create_app
 
 BASE_DIR = Path(__file__).resolve().parent
 TA_APP_PATH = BASE_DIR / "TA" / "app.py"
-CA_PACKAGE_PATH = BASE_DIR / "CA - Частухин Александр" / "zpi_app"
+CA_PACKAGE_PATH = BASE_DIR / "CA" / "zpi_app"
 
 
 def _load_ta_app_module():

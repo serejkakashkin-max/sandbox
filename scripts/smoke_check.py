@@ -32,7 +32,7 @@ REQUIRED_FILES = (
     "TA/templates/base.html",
     "TA/static/js/ai-analysis.js",
     "GD/templates/main_app.html",
-    "CA - Частухин Александр/zpi_app/templates/base.html",
+    "CA/zpi_app/templates/base.html",
 )
 
 SMOKE_ROUTES = (
