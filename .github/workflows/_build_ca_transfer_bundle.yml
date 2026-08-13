@@ -1,0 +1,53 @@
+name: Build CA transfer bundle
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/_build_ca_transfer_bundle.yml
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Build exact CA integration overlay
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+          import zipfile
+
+          base = "09389ad4dde9697887b3edfd9e46004d3f0a3709"
+          excluded = {".github/workflows/_build_ca_transfer_bundle.yml"}
+          raw = subprocess.check_output([
+              "git", "diff", "--name-only", "-z", f"{base}..HEAD"
+          ])
+          paths = [p.decode("utf-8") for p in raw.split(b"\0") if p]
+          paths = [p for p in paths if p not in excluded and Path(p).is_file()]
+
+          output = Path("sandbox_CA_Chastukhin_transfer_overlay.zip")
+          with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+              for path in paths:
+                  archive.write(path, arcname=path)
+
+          print(f"Packed {len(paths)} files into {output}")
+          for path in paths:
+              print(path)
+          PY
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: sandbox-ca-transfer-bundle
+          path: sandbox_CA_Chastukhin_transfer_overlay.zip
+          if-no-files-found: error
+          retention-days: 7
