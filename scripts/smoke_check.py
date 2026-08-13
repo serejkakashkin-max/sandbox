@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import importlib
+import os
+import sys
 from pathlib import Path
 
 from werkzeug.test import Client
 from werkzeug.wrappers import Response
 
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
+os.chdir(REPO_ROOT)
 
 REQUIRED_IMPORTS = (
     "apscheduler",
