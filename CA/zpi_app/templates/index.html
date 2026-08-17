@@ -99,7 +99,13 @@
     <div>
       <p class="step-label">Экспертный вывод</p>
       <h2>{{ analysis.conclusion_title }}</h2>
+      {% if analysis.outcome == "chunks_missing" %}
+      <ol class="source-list diagnostic-steps">
+        {% for step in analysis.missing_chunks_steps %}<li>{{ step }}</li>{% endfor %}
+      </ol>
+      {% else %}
       <p>{{ analysis.conclusion_text }}</p>
+      {% endif %}
     </div>
     {% if analysis.outcome == "chunks_missing" %}
     <aside class="microphone-hint">
@@ -231,6 +237,17 @@
       <ul class="source-list">
         {% for issue in parse_result.issues[:20] %}
         <li>{{ issue.source_name }}{% if issue.row_number %}, строка {{ issue.row_number }}{% endif %}: {{ issue.message }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if analysis.activity_evidence %}
+      <h3>Дата начала активности из SberCRM</h3>
+      <ul class="source-list">
+        {% for item in analysis.activity_evidence %}
+        <li>
+          <strong>{{ item.fact_start_date }}</strong> · <code>{{ item.source }}</code>
+          {% if item.meeting_match %} · совпадает с ID встречи{% endif %}
+        </li>
         {% endfor %}
       </ul>
       {% endif %}
