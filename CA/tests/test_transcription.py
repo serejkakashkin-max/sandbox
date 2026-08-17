@@ -49,6 +49,22 @@ def voice(row: int, value: bool, time: str) -> LogRecord:
     )
 
 
+def activity(row: int, fact_start_date: str, time: str, *, include_meeting: bool = False) -> LogRecord:
+    meeting_fragment = f' meetingId={MEETING_ID}' if include_meeting else ""
+    return LogRecord(
+        "activity.txt",
+        row,
+        {
+            "className": "ru.sber.LoggingAspect",
+            "serverEventDatetime": time,
+            "message": (
+                "SBER_CRM_GET_TASK_DETAIL.Получение детальной карточки задачи(активности)"
+                f'в SberCRM.Ответ:{meeting_fragment} {{\"factStartDate\":\"{fact_start_date}T12:00:00\"}}'
+            ),
+        },
+    )
+
+
 def test_analysis_selects_largest_group_and_expert_part_two_time():
     records = [
         chunk(1, MAIN_UUID, 0, "2026-08-03T09:41:53.602Z"),
@@ -66,8 +82,11 @@ def test_analysis_selects_largest_group_and_expert_part_two_time():
     assert result.selected_group.representative.local_time == "2026-08-03T12:42:30"
     assert result.selected_response.value is False
     assert f'Ответ: {{"{MEETING_ID}":false}}' in result.ticket_text
-    assert f'uuid = Meta: {{"uuid":"{MAIN_UUID}"}}' in result.ticket_text
-    assert any("несколько UUID" in warning for warning in result.warnings)
+    assert "uuid =\n" in result.ticket_text
+    assert f'Meta: {{"uuid":"{MAIN_UUID}"}}' in result.ticket_text
+    assert f'Meta: {{"uuid":"{FINAL_UUID}"}}' in result.ticket_text
+    assert result.ticket_text.index(MAIN_UUID) < result.ticket_text.index(FINAL_UUID)
+    assert any("все найденные UUID" in warning for warning in result.warnings)
 
 
 def test_analysis_deduplicates_overlapping_exports():
@@ -85,9 +104,43 @@ def test_analysis_reports_missing_data_without_inventing_ticket():
     assert result.success is False
     assert result.outcome == "chunks_missing"
     assert result.conclusion_title == "Чанки записи не найдены"
+    assert "Дата начала активности" in result.conclusion_text
+    assert "не найдена" in result.conclusion_text
     assert "ошибка с микрофоном" in result.conclusion_text
     assert result.ticket_text is None
-    assert len(result.warnings) == 2
+    assert len(result.warnings) == 3
+
+
+def test_missing_chunks_uses_fact_start_date_for_file_check():
+    result = analyze_transcription(
+        [activity(1, "2026-08-03", "2026-08-03T09:40:00.000Z")],
+        MEETING_ID,
+    )
+
+    assert result.outcome == "chunks_missing"
+    assert result.selected_activity is not None
+    assert result.selected_activity.fact_start_date == "2026-08-03"
+    assert result.missing_chunks_steps == [
+        "Дата начала активности 2026-08-03. Сравните дату и загрузите новый файл.",
+        "Возможно, запись отсутствует или произошла ошибка с микрофоном.",
+    ]
+    assert "1. Дата начала активности 2026-08-03" in result.conclusion_text
+    assert result.ticket_text is None
+
+
+def test_missing_chunks_does_not_guess_between_conflicting_activity_dates():
+    result = analyze_transcription(
+        [
+            activity(1, "2026-08-03", "2026-08-03T09:40:00.000Z"),
+            activity(2, "2026-08-04", "2026-08-04T09:40:00.000Z"),
+        ],
+        MEETING_ID,
+    )
+
+    assert result.selected_activity is None
+    assert result.activity_dates == ["2026-08-03", "2026-08-04"]
+    assert "несколько дат начала активности" in result.missing_chunks_steps[0]
+    assert any("автоматически выбрать" in warning for warning in result.warnings)
 
 
 def test_true_response_recommends_rechecking_but_keeps_optional_ticket():
