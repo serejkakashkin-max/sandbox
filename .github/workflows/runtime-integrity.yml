@@ -41,7 +41,7 @@ jobs:
         working-directory: CA
         run: |
           uv sync --extra dev
-          uv run pytest
+          uv run python -m pytest
 
       - name: Persist updated lock
         shell: bash
