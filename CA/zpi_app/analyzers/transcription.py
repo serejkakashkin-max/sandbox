@@ -12,6 +12,7 @@ from ..parsers import LogRecord
 
 SVA_CLASS = "ru.sber.mmb.emrm.utilities.da.client.smart.sva.SvaKafkaProducer"
 VOICE360_MARKER = "VOICE360_CHECK_MEETINGS_TRANSCRIPTION"
+TASK_DETAIL_MARKER = "SBER_CRM_GET_TASK_DETAIL"
 SERVICE = "ПКАП СС360.ИТ.Сервисы Цифрового Аватара (CI02736546)"
 WORK_GROUP = "Сопровождение Сервисы Цифрового Аватара КИБ (Жилко Д. С.)"
 
@@ -21,6 +22,10 @@ PART_RE = re.compile(r'"part"\s*:\s*(\d+)', re.I)
 LAST_RE = re.compile(r'"isLastRecord"\s*:\s*(true|false)', re.I)
 VOICE_RESULT_RE = re.compile(
     r'Ответ:\s*\{\s*"(?P<meeting>[0-9A-F]{32})"\s*:\s*(?P<value>true|false)\s*\}',
+    re.I,
+)
+FACT_START_DATE_RE = re.compile(
+    r'["\']?factStartDate["\']?\s*:\s*["\']?(?P<date>\d{4}-\d{2}-\d{2})',
     re.I,
 )
 MEETING_ID_RE = re.compile(r"^[0-9A-F]{32}$")
@@ -118,6 +123,16 @@ class VoiceEvidence:
     message: str
 
 
+@dataclass(frozen=True)
+class ActivityEvidence:
+    fact_start_date: str
+    server_time: str | None
+    local_time: str | None
+    source: str
+    message_excerpt: str
+    meeting_match: bool
+
+
 @dataclass
 class TranscriptionAnalysis:
     meeting_id: str
@@ -127,6 +142,8 @@ class TranscriptionAnalysis:
     selected_group: ChunkGroup | None
     voice_responses: list[VoiceEvidence]
     selected_response: VoiceEvidence | None
+    activity_evidence: list[ActivityEvidence]
+    selected_activity: ActivityEvidence | None
     warnings: list[str]
     ticket_text: str | None
     selection_explanation: str | None
@@ -155,12 +172,42 @@ class TranscriptionAnalysis:
         }[self.outcome]
 
     @property
+    def activity_dates(self) -> list[str]:
+        return sorted({item.fact_start_date for item in self.activity_evidence})
+
+    @property
+    def missing_chunks_steps(self) -> list[str]:
+        if self.outcome != "chunks_missing":
+            return []
+        if self.selected_activity is not None:
+            date_step = (
+                f"Дата начала активности {self.selected_activity.fact_start_date}. "
+                "Сравните дату и загрузите новый файл."
+            )
+        elif self.activity_dates:
+            date_step = (
+                "В логах найдено несколько дат начала активности: "
+                + ", ".join(self.activity_dates)
+                + ". Сверьте дату нужной активности и загрузите соответствующий файл."
+            )
+        else:
+            date_step = (
+                "Дата начала активности в SBER_CRM_GET_TASK_DETAIL не найдена. "
+                "Проверьте, что загружены логи нужной активности."
+            )
+        return [
+            date_step,
+            "Возможно, запись отсутствует или произошла ошибка с микрофоном.",
+        ]
+
+    @property
     def conclusion_text(self) -> str:
+        if self.outcome == "chunks_missing":
+            return " ".join(
+                f"{index}. {step}"
+                for index, step in enumerate(self.missing_chunks_steps, start=1)
+            )
         return {
-            "chunks_missing": (
-                "Чанки записи не найдены, возможно, запись отсутствует "
-                "или произошла ошибка с микрофоном."
-            ),
             "voice_missing": (
                 "Чанки записи найдены, но в загруженных логах отсутствует ответ "
                 "VOICE360. Для окончательного вывода нужны дополнительные логи."
@@ -175,9 +222,17 @@ class TranscriptionAnalysis:
             ),
         }[self.outcome]
 
+
 def _extract_uuid(message: str) -> str | None:
     match = UUID_RE.search(message) or KEY_RE.search(message)
     return match.group(1).lower() if match else None
+
+
+def _extract_fact_start_date(message: str) -> str | None:
+    # Иногда JSON ответа SberCRM остаётся экранирован внутри message.
+    normalized = message.replace('\\"', '"')
+    match = FACT_START_DATE_RE.search(normalized)
+    return match.group("date") if match else None
 
 
 def _excerpt(message: str, limit: int = 260) -> str:
@@ -185,8 +240,24 @@ def _excerpt(message: str, limit: int = 260) -> str:
     return compact if len(compact) <= limit else compact[: limit - 1] + "…"
 
 
+def _select_activity_evidence(
+    evidence: list[ActivityEvidence],
+) -> ActivityEvidence | None:
+    if not evidence:
+        return None
+
+    meeting_specific = [item for item in evidence if item.meeting_match]
+    candidates = meeting_specific or evidence
+    dates = {item.fact_start_date for item in candidates}
+    if len(dates) != 1:
+        # Без однозначной связи со встречей не угадываем дату активности.
+        return None
+    return max(candidates, key=lambda item: _timestamp_key(item.server_time))
+
+
 def _build_ticket(
     meeting_id: str,
+    groups: list[ChunkGroup],
     group: ChunkGroup,
     response: VoiceEvidence,
 ) -> str:
@@ -197,6 +268,7 @@ def _build_ticket(
         f'Ответ: {{"{meeting_id}":{result}}}'
     )
     local_time = representative.local_time or representative.server_time or "не определено"
+    uuid_lines = [f'Meta: {{"uuid":"{item.uuid}"}}' for item in groups]
     return "\n".join(
         [
             f"Услуга: {SERVICE}",
@@ -211,7 +283,8 @@ def _build_ticket(
             response_line,
             f"дата/время записи = {local_time}",
             f"id встречи = {meeting_id}",
-            f'uuid = Meta: {{"uuid":"{group.uuid}"}}',
+            "uuid =",
+            *uuid_lines,
             "При отсутствии транскрибации просьба уточнить причины.",
             "Спасибо.",
         ]
@@ -225,14 +298,39 @@ def analyze_transcription(
     normalized_id = normalize_meeting_id(meeting_id)
     groups_map: dict[str, list[ChunkEvidence]] = defaultdict(list)
     responses: list[VoiceEvidence] = []
+    activity_evidence: list[ActivityEvidence] = []
     matched_locations: set[tuple[str, int, str | None]] = set()
     seen_sva: set[tuple[str, str, str]] = set()
     seen_voice: set[tuple[str, str]] = set()
+    seen_activity: set[tuple[str, str, str]] = set()
 
     for record in records:
         message = str(record.get("message", ""))
         class_name = str(record.get("className", ""))
-        if normalized_id not in message.upper():
+        upper_message = message.upper()
+
+        if TASK_DETAIL_MARKER in upper_message:
+            fact_start_date = _extract_fact_start_date(message)
+            if fact_start_date:
+                server_time = str(record.get("serverEventDatetime", "")) or None
+                fingerprint = (fact_start_date, server_time or "", message)
+                if fingerprint not in seen_activity:
+                    seen_activity.add(fingerprint)
+                    activity_evidence.append(
+                        ActivityEvidence(
+                            fact_start_date=fact_start_date,
+                            server_time=server_time,
+                            local_time=_moscow_text(server_time),
+                            source=record.location,
+                            message_excerpt=_excerpt(message),
+                            meeting_match=normalized_id in upper_message,
+                        )
+                    )
+                    matched_locations.add(
+                        (record.source_name, record.row_number, record.sheet_name)
+                    )
+
+        if normalized_id not in upper_message:
             continue
 
         if class_name == SVA_CLASS and "topic: record_focus" in message:
@@ -281,9 +379,11 @@ def analyze_transcription(
     groups = [ChunkGroup(uuid=uuid, rows=rows) for uuid, rows in groups_map.items()]
     groups.sort(key=lambda group: (-len(group.rows), group.first_local_time or "", group.uuid))
     responses.sort(key=lambda item: _timestamp_key(item.server_time))
+    activity_evidence.sort(key=lambda item: _timestamp_key(item.server_time))
 
     selected_group = groups[0] if groups else None
     selected_response = responses[-1] if responses else None
+    selected_activity = _select_activity_evidence(activity_evidence)
     warnings: list[str] = []
     selection_explanation = None
 
@@ -291,9 +391,19 @@ def analyze_transcription(
         warnings.append(
             "Не найдены отправки record_focus через SvaKafkaProducer для указанной встречи."
         )
+        if not activity_evidence:
+            warnings.append(
+                "Не найдена дата начала активности factStartDate в SBER_CRM_GET_TASK_DETAIL."
+            )
+        elif selected_activity is None:
+            warnings.append(
+                "В SBER_CRM_GET_TASK_DETAIL найдено несколько разных дат активности; "
+                "автоматически выбрать одну дату без риска ошибки нельзя."
+            )
     elif len(groups) > 1:
         warnings.append(
-            f"Найдено несколько UUID ({len(groups)}). Основным выбран UUID с наибольшим числом чанков; остальные показаны ниже."
+            f"Найдено несколько UUID ({len(groups)}). Основным выбран UUID с наибольшим "
+            "числом чанков; все найденные UUID будут включены в текст ЗПИ."
         )
     if selected_group:
         selection_explanation = (
@@ -323,7 +433,7 @@ def analyze_transcription(
             )
 
     ticket_text = (
-        _build_ticket(normalized_id, selected_group, selected_response)
+        _build_ticket(normalized_id, groups, selected_group, selected_response)
         if selected_group and selected_response
         else None
     )
@@ -335,6 +445,8 @@ def analyze_transcription(
         selected_group=selected_group,
         voice_responses=responses,
         selected_response=selected_response,
+        activity_evidence=activity_evidence,
+        selected_activity=selected_activity,
         warnings=warnings,
         ticket_text=ticket_text,
         selection_explanation=selection_explanation,
