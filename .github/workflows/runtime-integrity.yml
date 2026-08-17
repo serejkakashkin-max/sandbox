@@ -7,6 +7,10 @@ on:
       - pyproject.toml
       - TA/requirements-extra.txt
       - scripts/smoke_check.py
+      - wsgi.py
+      - sandbox_app/**
+      - CA/**
+      - .github/workflows/runtime-integrity.yml
   workflow_dispatch:
 
 permissions:
@@ -32,6 +36,12 @@ jobs:
 
       - name: Smoke-check all Sandbox modules
         run: uv run python scripts/smoke_check.py
+
+      - name: Test CA regression suite
+        working-directory: CA
+        run: |
+          uv sync --extra dev
+          uv run pytest
 
       - name: Persist updated lock
         shell: bash
