@@ -124,10 +124,23 @@ def test_missing_chunks_shows_microphone_diagnosis_and_clickstream_hint():
         "VOICE360_CHECK_MEETINGS_TRANSCRIPTION. Проверка наличия транскрибации по встрече. "
         f'Ответ: {{"{MEETING_ID}":false}}'
     )
-    text = (
-        '"className":"LoggingAspect",'
-        '"serverEventDatetime":"2026-08-03T10:21:21.043Z",'
-        f'"message":{json.dumps(voice_message, ensure_ascii=False)}'
+    activity_message = (
+        'SBER_CRM_GET_TASK_DETAIL.Получение детальной карточки задачи(активности)'
+        'в SberCRM.Ответ: {"factStartDate":"2026-08-03T12:00:00"}'
+    )
+    text = "\n".join(
+        [
+            (
+                '"className":"LoggingAspect",'
+                '"serverEventDatetime":"2026-08-03T09:40:00.000Z",'
+                f'"message":{json.dumps(activity_message, ensure_ascii=False)}'
+            ),
+            (
+                '"className":"LoggingAspect",'
+                '"serverEventDatetime":"2026-08-03T10:21:21.043Z",'
+                f'"message":{json.dumps(voice_message, ensure_ascii=False)}'
+            ),
+        ]
     ).encode("utf-8")
 
     response = client.post(
@@ -143,7 +156,11 @@ def test_missing_chunks_shows_microphone_diagnosis_and_clickstream_hint():
 
     assert response.status_code == 200
     assert "Чанки записи не найдены" in body
+    assert 'class="source-list diagnostic-steps"' in body
+    assert "Дата начала активности 2026-08-03" in body
+    assert "Сравните дату и загрузите новый файл" in body
     assert "произошла ошибка с микрофоном" in body
+    assert "Дата начала активности из SberCRM" in body
     assert "табельный номер сотрудника" in body
     assert "https://clickstream.sberbank.ru/frontend/fokus/audience/web-profiles" in body
     assert "Текст заявки на смежную систему" not in body
