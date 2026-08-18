@@ -5,7 +5,7 @@ import secrets
 from flask import Blueprint, current_app, render_template, request, session
 from werkzeug.exceptions import RequestEntityTooLarge
 
-from .analyzers import analyze_transcription
+from .analyzers import analyze_case
 from .parsers import LogParseError, parse_uploads
 
 
@@ -77,7 +77,7 @@ def index():
     try:
         parse_result = parse_uploads(request.files.getlist("logs"), current_app.config)
         meeting_id = context["form"]["meeting_id"]
-        analysis = analyze_transcription(
+        analysis = analyze_case(
             parse_result.records,
             meeting_id,
         )

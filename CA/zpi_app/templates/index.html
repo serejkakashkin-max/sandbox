@@ -3,11 +3,11 @@
 {% block content %}
 <section class="hero">
   <div>
-    <p class="eyebrow">Сценарий 01</p>
-    <h1>Не сформировалось резюме встречи</h1>
+    <p class="eyebrow">Сценарий 01 · Не сформировалось резюме встречи · Сценарий 02 · Звонок</p>
+    <h1>Проверка резюме встречи или транскрибации звонка</h1>
     <p class="hero-copy">
-      Загрузите выгрузки логов и укажите известный ID встречи. Сервис найдёт отправленные
-      чанки, UUID записи и ответ VOICE360, а затем предложит дальнейшее действие.
+      Загрузите выгрузки логов и укажите известный ID активности. Сервис автоматически
+      определит сценарий по SberCRM/VOICE360, соберёт доказательства и предложит дальнейшее действие.
     </p>
   </div>
   <ol class="flow" aria-label="Этапы анализа">
@@ -36,7 +36,7 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="field-grid">
       <label class="field field-wide">
-        <span>ID встречи <b aria-hidden="true">*</b></span>
+        <span>ID встречи / звонка <b aria-hidden="true">*</b></span>
         <input
           name="meeting_id"
           value="{{ form.meeting_id }}"
@@ -46,7 +46,7 @@
           autocomplete="off"
           required
         >
-        <small>Укажите ID из заявки: 32 символа, без пробелов и дефисов</small>
+        <small>Укажите ID из заявки: 32 символа, без пробелов и дефисов; подходит для встречи и звонка</small>
       </label>
       <label class="field">
         <span>Номер ЗПИ</span>
@@ -84,7 +84,7 @@
 <section class="results" id="results" tabindex="-1">
   <div class="result-header">
     <div>
-      <p class="eyebrow">Результат анализа</p>
+      <p class="eyebrow">Результат анализа · {{ "Звонок" if analysis.scenario == "call" else "Встреча" }}</p>
       <h2>{{ analysis.conclusion_title }}</h2>
     </div>
     <span class="status-pill {{ 'status-ok' if analysis.outcome == 'transcription_missing' else 'status-warn' }}">
@@ -107,7 +107,7 @@
       <p>{{ analysis.conclusion_text }}</p>
       {% endif %}
     </div>
-    {% if analysis.outcome == "chunks_missing" %}
+    {% if analysis.scenario == "meeting" and analysis.outcome == "chunks_missing" %}
     <aside class="microphone-hint">
       <strong>Как проверить ошибку микрофона</strong>
       <p>Возьмите табельный номер сотрудника, найдите его профиль в Clickstream и выберите дату начала встречи.</p>
@@ -126,8 +126,13 @@
       <strong>{{ analysis.matched_records }}</strong>
     </article>
     <article>
+      {% if analysis.scenario == "call" %}
+      <span>Карточек CALLING</span>
+      <strong>{{ analysis.activity_evidence|length }}</strong>
+      {% else %}
       <span>Групп UUID</span>
       <strong>{{ analysis.groups|length }}</strong>
+      {% endif %}
     </article>
     <article>
       <span>Ответов VOICE360</span>
@@ -142,6 +147,27 @@
       {% for warning in analysis.warnings %}<li>{{ warning }}</li>{% endfor %}
     </ul>
   </div>
+  {% endif %}
+
+  {% if analysis.scenario == "call" %}
+  <section class="panel evidence-panel">
+    <div class="panel-heading">
+      <div>
+        <p class="step-label">Определённый сценарий</p>
+        <h2>Звонок</h2>
+      </div>
+      <span class="status-pill status-ok">CALLING</span>
+    </div>
+    <dl class="key-values">
+      <div class="key-wide"><dt>ID звонка</dt><dd><code>{{ analysis.meeting_id }}</code></dd></div>
+      <div class="key-wide"><dt>Дата/время начала из SberCRM</dt><dd>{{ analysis.selected_activity.fact_start_date if analysis.selected_activity else "—" }}</dd></div>
+    </dl>
+    <p class="explanation">
+      Для сценария звонка используется <code>factStartDate</code> из
+      <code>SBER_CRM_GET_TASK_DETAIL</code>. Если значение уже содержит смещение
+      <code>+03:00</code>, оно используется как есть — дополнительные три часа не прибавляются.
+    </p>
+  </section>
   {% endif %}
 
   {% if analysis.selected_group %}
@@ -190,7 +216,7 @@
   <section class="panel response-panel">
     <div>
       <p class="step-label">VOICE360</p>
-      <h2>Транскрибация {{ "найдена" if analysis.selected_response.value else "не найдена" }}</h2>
+      <h2>{% if analysis.scenario == "call" %}Транскрибация звонка{% else %}Транскрибация{% endif %} {{ "найдена" if analysis.selected_response.value else "не найдена" }}</h2>
       <p>{{ analysis.selected_response.message }}</p>
     </div>
     <span class="boolean-badge {{ 'boolean-true' if analysis.selected_response.value else 'boolean-false' }}">
@@ -204,7 +230,7 @@
     <div>
       <p class="step-label">Если пользователь не согласен</p>
       <h2>Всё равно требуется обращение к смежной системе?</h2>
-      <p>Если повторная проверка не помогла, сформируйте ЗПИ с найденными доказательствами.</p>
+      <p>{% if analysis.scenario == "call" %}Если повторная проверка транскрибации звонка не помогла{% else %}Если повторная проверка резюме не помогла{% endif %}, сформируйте ЗПИ с найденными доказательствами.</p>
     </div>
     <button type="button" class="secondary-button" data-reveal-target="optional-ticket">Сформировать ЗПИ</button>
   </section>
@@ -241,12 +267,12 @@
       </ul>
       {% endif %}
       {% if analysis.activity_evidence %}
-      <h3>Дата начала активности из SberCRM</h3>
+      <h3>{% if analysis.scenario == "call" %}Дата/время звонка из SberCRM{% else %}Дата начала активности из SberCRM{% endif %}</h3>
       <ul class="source-list">
         {% for item in analysis.activity_evidence %}
         <li>
           <strong>{{ item.fact_start_date }}</strong> · <code>{{ item.source }}</code>
-          {% if item.meeting_match %} · совпадает с ID встречи{% endif %}
+          {% if item.meeting_match %} · совпадает с ID активности{% endif %}
         </li>
         {% endfor %}
       </ul>
