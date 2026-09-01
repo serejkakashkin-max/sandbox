@@ -298,6 +298,27 @@ def get_history_for_incident(incident_id):
     conn.close()
     return rows
 
+
+def get_history_for_protocols(protocol_files):
+    """Return protocol history rows grouped by file using one database query."""
+    names = tuple(dict.fromkeys(str(name) for name in protocol_files if name))
+    if not names:
+        return {}
+    placeholders = ",".join("?" for _ in names)
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            f"SELECT * FROM incident_history WHERE protocol_file IN ({placeholders}) "
+            "ORDER BY created_at DESC, id DESC",
+            names,
+        ).fetchall()
+        grouped = {name: [] for name in names}
+        for row in rows:
+            grouped.setdefault(row["protocol_file"], []).append(dict(row))
+        return grouped
+    finally:
+        conn.close()
+
 def get_all_repeated_grouped():
     """
     Инциденты, которые встречались больше одного раза,

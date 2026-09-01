@@ -1,6 +1,5 @@
 from flask import Flask, abort, jsonify, render_template, request, redirect, url_for, send_file, session
 import pandas as pd
-import re
 import os
 import json
 import secrets
@@ -13,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 import tempfile
 import threading
+from zoneinfo import ZoneInfo
 from werkzeug.utils import secure_filename
 from TA.audit_engine import (
     audit_incident as run_incident_audit,
@@ -24,13 +24,27 @@ from TA.db import (
     init_db,
     save_history_entries,
     get_history_for_incident,
-    get_all_history_ids,
-    get_history_grouped_by_date,
+    get_history_for_protocols,
     claim_ai_analysis,
     complete_ai_analysis,
     fail_ai_analysis,
     get_ai_analysis,
     get_ai_states,
+)
+from TA.dashboard_view import (
+    build_metrics,
+    build_periods,
+    build_status_groups,
+    choose_default_section,
+    choose_default_status,
+    global_search,
+    parse_created,
+    status_group_key,
+)
+from TA.protocol_history import (
+    build_repeat_groups,
+    parse_manual_protocol_entries,
+    select_recent_protocols,
 )
 from TA.ai_analysis import (
     AIReportFormatError,
@@ -119,6 +133,7 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 init_db()
 
 incidents = []
+upload_state = {"filename": "", "loaded_at": None}
 MEMORY_FILE = str(MEMORY_PATH)
 PROTOCOLS_DIR = str(PROTOCOLS_PATH)
 _state_lock = threading.RLock()
@@ -279,122 +294,9 @@ AI_ERROR_HTTP_STATUS = {
     "unknown": 502,
 }
 
-# ====================== ДАТЫ ======================
-def parse_incident_date(value):
-    if value is None:
-        return None
-    if hasattr(value, 'to_pydatetime'):
-        try:
-            return value.to_pydatetime().replace(tzinfo=None)
-        except Exception:
-            pass
-    value = str(value).strip()
-    if not value or value.lower() in ('nan', 'none', 'nat', ''):
-        return None
-    formats = [
-        '%d.%m.%Y %H:%M:%S',
-        '%d.%m.%Y %H:%M',
-        '%d.%m.%Y',
-        '%Y-%m-%d %H:%M:%S',
-        '%Y-%m-%d %H:%M',
-        '%Y-%m-%d',
-        '%d/%m/%Y %H:%M:%S',
-        '%d/%m/%Y %H:%M',
-        '%d/%m/%Y',
-        '%Y.%m.%d %H:%M:%S',
-        '%Y.%m.%d %H:%M',
-        '%Y.%m.%d',
-    ]
-    clean = value.replace('T', ' ')[:19]
-    for fmt in formats:
-        try:
-            return datetime.strptime(clean, fmt)
-        except Exception:
-            continue
-    return None
-
-def filter_by_date(inc_list, date_from_str, date_to_str):
-    if not date_from_str and not date_to_str:
-        return inc_list
-    date_from = None
-    date_to = None
-    try:
-        if date_from_str:
-            date_from = datetime.strptime(date_from_str, '%Y-%m-%d')
-    except Exception:
-        pass
-    try:
-        if date_to_str:
-            date_to = datetime.strptime(date_to_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
-    except Exception:
-        pass
-    result = []
-    for inc in inc_list:
-        raw = inc.get('Фактическое время возникновения', '') or inc.get('Фактическое время возникновения инцидента', '')
-        dt = parse_incident_date(raw)
-        if dt is None:
-            continue
-        if date_from and dt < date_from:
-            continue
-        if date_to and dt > date_to:
-            continue
-        result.append(inc)
-    return result
-
 # ====================== ВСПОМОГАТЕЛЬНЫЕ ======================
 def is_test_incident(inc):
     return engine_is_test_incident(inc)
-
-def extract_jira_links(text):
-    patterns = [
-        (r'(OPLOT-\d+)',  'https://jira.delta.sbrf.ru/browse/{}'),
-        (r'(SMECLM-\d+)', 'https://jira.sberbank.ru/browse/{}'),
-        (r'(SMECSC-\d+)', 'https://jira.delta.sbrf.ru/browse/{}'),
-        (r'(EMRM-\d+)',   'https://jira.sberbank.ru/browse/{}'),
-        (r'(DRMMMB-\d+)', 'https://jira.sberbank.ru/browse/{}'),
-    ]
-    links = {}
-    for pattern, base_url in patterns:
-        for match in re.findall(pattern, text, re.I):
-            links[match.upper()] = base_url.format(match.upper())
-    return links
-
-def analyze_chronology(sol):
-    return []
-
-def extract_affected_systems(text):
-    systems = {
-        'Oracle', 'PostgreSQL', 'Kafka', 'RabbitMQ', 'Redis', 'Nginx', 'Apache', 'Tomcat',
-        'Kubernetes', 'Docker', 'Linux', 'Windows', 'Zabbix', 'Prometheus', 'Grafana',
-        'Jenkins', 'GitLab', 'OpenShift', 'VMware', 'MQ', 'WebSphere'
-    }
-    found = set()
-    for sys in systems:
-        if re.search(r'\b' + re.escape(sys) + r'\b', text, re.I):
-            found.add(sys)
-    return sorted(list(found))
-
-def extract_problem_types(text):
-    types = {
-        'Диск', 'Файловая система', 'CPU', 'Высокая нагрузка', 'Память', 'OutOfMemory', 'OOM',
-        'GC', 'Сеть', 'DNS', 'Балансировщик', 'SSL', 'Сертификат', 'База данных', 'SQL',
-        'Deadlock', 'Replication', 'Очередь', 'Блокировка', 'Timeout', 'Авторизация',
-        'LDAP', 'Kerberos', 'SSO', 'Интеграция', 'REST', 'SOAP', 'API'
-    }
-    found = set()
-    for t in types:
-        if re.search(r'\b' + re.escape(t) + r'\b', text, re.I):
-            found.add(t)
-    return sorted(list(found))
-
-def check_reason_quality(reason):
-    if not reason or len(reason.strip()) < 15:
-        return "Причина описана слишком кратко"
-    bad_phrases = ['исправлено', 'устранено', 'сбой', 'ошибка', 'не работало', 'проблема',
-                   'инцидент', 'восстановлено', 'работы выполнены']
-    if any(phrase in reason.lower() for phrase in bad_phrases) and len(reason.strip()) < 30:
-        return "Причина описана слишком общими словами"
-    return None
 
 def clean_uploads(keep=None):
     keep_path = Path(keep).resolve() if keep else None
@@ -411,9 +313,8 @@ def analyze_incident(inc):
     return run_incident_audit(inc)
 
 def get_filtered_incidents():
-    date_from = request.args.get('date_from', '').strip()
-    date_to = request.args.get('date_to', '').strip()
-    return filter_by_date(incidents, date_from, date_to)
+    with _state_lock:
+        return [dict(incident) for incident in incidents]
 
 def evaluate_fix_status(inc, history_row, analysis=None):
     """
@@ -511,8 +412,8 @@ def evaluate_fix_status(inc, history_row, analysis=None):
         'details': fixed_flags + open_flags
     }
 # ====================== РОУТЫ ======================
-TAB_ALIASES = {"remarks": "warnings", "test": "skipped"}
-ALLOWED_TABS = {"all", "errors", "warnings", "correct", "inwork", "skipped"}
+TAB_ALIASES = {"remarks": "warnings", "test": "skipped", "inwork": "skipped"}
+ALLOWED_TABS = {"all", "errors", "warnings", "correct", "skipped"}
 
 
 def normalize_tab(value, default="all"):
@@ -590,23 +491,138 @@ def build_detail_fields(incident):
     return fields
 
 
-def incident_group_key(profile, outcome):
-    if profile == "in_work":
-        return "inwork"
-    if outcome in {"skipped", "system_error"}:
-        return "skipped"
-    return {
-        "error": "errors",
-        "warning": "warnings",
-        "passed": "correct",
-    }.get(outcome, "skipped")
+def _prepare_dashboard_incidents(raw_incidents, remembered_ids=()):
+    remembered_id_set = {str(value).strip().upper() for value in remembered_ids}
+    ai_config = GigaChatConfig.from_env(PROJECT_ROOT)
+    contexts = [build_ai_context(incident, config=ai_config) for incident in raw_incidents]
+    ai_states = get_ai_states(
+        [
+            (
+                context["incident_id"],
+                context["content_hash"],
+                context["prompt_version"],
+                context["model"],
+            )
+            for context in contexts
+        ]
+    )
+    prepared = []
+    for incident, context in zip(raw_incidents, contexts):
+        row = incident.copy()
+        profile = classify_incident(incident)
+        analysis = analyze_incident(incident)
+        incident_id = context["incident_id"]
+        row.update(
+            {
+                "incident_id": incident_id,
+                "profile": profile,
+                "analysis": analysis,
+                "executor_display": normalize_text(incident.get("Исполнитель"))
+                or "Исполнитель не указан",
+                "subject_display": normalize_text(incident.get("Тема инцидента"))
+                or "Тема не указана",
+                "ai_state": public_ai_state(ai_states.get(incident_id)),
+                "is_repeated": False,
+                "history": [],
+                "is_remembered": incident_id in remembered_id_set,
+            }
+        )
+        created = parse_created(incident.get("Создан"))
+        row["created_display"] = created.strftime("%d.%m.%Y %H:%M") if created else "—"
+        result_key = status_group_key(profile, analysis.get("outcome"))
+        if profile == "in_work":
+            result_label = "В работе"
+        elif result_key == "errors":
+            result_label = "На доработку"
+        elif result_key == "warnings":
+            result_label = "Замечания"
+        elif result_key == "correct":
+            result_label = "Корректно"
+        else:
+            result_label = "Не проверяется"
+        row["result_key"] = result_key
+        row["result_label"] = result_label
+        checks = analysis.get("checks") or []
+        issues = [
+            check
+            for check in checks
+            if check.get("severity") in {"error", "warning"}
+        ]
+        row["issues"] = issues
+        row["primary_issue"] = issues[0] if issues else None
+        prepared.append(row)
+    return prepared
+
+
+def _repeat_dashboard_data(prepared_incidents):
+    protocol_paths = [
+        Path(PROTOCOLS_DIR) / filename for filename in _list_protocol_files()
+    ]
+    candidates = select_recent_protocols(
+        protocol_paths,
+        limit=min(max(len(protocol_paths), 5), 50),
+    )
+    rows_by_protocol = get_history_for_protocols(
+        [ref.filename for ref in candidates]
+    )
+    selected_refs = []
+    for ref in candidates:
+        if rows_by_protocol.get(ref.filename):
+            selected_refs.append(ref)
+        else:
+            try:
+                text = ref.path.read_text(encoding="utf-8")
+            except OSError:
+                app.logger.exception("Не удалось прочитать протокол %s", ref.filename)
+                continue
+            rows_by_protocol[ref.filename] = list(
+                parse_manual_protocol_entries(text, ref.filename)
+            )
+            selected_refs.append(ref)
+        if len(selected_refs) == 5:
+            break
+    refs = tuple(selected_refs)
+    groups = build_repeat_groups(prepared_incidents, refs, rows_by_protocol)
+    repeated_ids = {
+        repeat.incident.get("incident_id", "")
+        for group in groups
+        for repeat in group.incidents
+    }
+    history_by_id = {
+        repeat.incident.get("incident_id", ""): list(repeat.history)
+        for group in groups
+        for repeat in group.incidents
+    }
+    for row in prepared_incidents:
+        incident_id = row.get("incident_id", "")
+        row["is_repeated"] = incident_id in repeated_ids
+        row["history"] = history_by_id.get(incident_id, [])
+    return groups, repeated_ids
+
+
+def _period_for_key(periods, key):
+    if key == "unknown":
+        return periods.unknown
+    return next((period for period in periods.weeks if period.key == key), None)
+
+
+def _period_label_lookup(periods):
+    labels = {}
+    if periods.current:
+        for row in periods.current.incidents:
+            labels[id(row)] = periods.current.label
+    for period in periods.weeks:
+        for row in period.incidents:
+            labels[id(row)] = period.label
+    if periods.unknown:
+        for row in periods.unknown.incidents:
+            labels[id(row)] = periods.unknown.label
+    return labels
 
 
 @app.route('/', methods=['GET', 'POST'])
 @csrf_protected
 def index():
-    global incidents
-
     if request.method == 'POST':
         file = request.files.get('file')
         if not file or not file.filename:
@@ -664,123 +680,124 @@ def index():
             app.logger.exception("Не удалось сохранить проверенный XLSX")
             return "Не удалось сохранить загруженный файл", 500
 
+        new_incidents = [dict(row) for _, row in df.iterrows()]
+        loaded_at = datetime.now(ZoneInfo("Europe/Moscow"))
         clean_uploads(keep=destination)
-        incidents = [dict(row) for _, row in df.iterrows()]
+        with _state_lock:
+            incidents[:] = new_incidents
+            upload_state.update({"filename": safe_name, "loaded_at": loaded_at})
         return redirect(url_for('index'))
 
-    date_from = request.args.get('date_from', '').strip()
-    date_to = request.args.get('date_to', '').strip()
-    executor_filter = request.args.get('executor', '')
-    search_query = request.args.get('search', '').strip()
-    search = search_query.casefold()
+    with _state_lock:
+        raw_incidents = [dict(incident) for incident in incidents]
+        current_upload = dict(upload_state)
+        remembered_snapshot = {key: dict(value) for key, value in remembered.items()}
 
-    filtered = get_filtered_incidents()
-
-    if search:
-        filtered = [
-            inc for inc in filtered
-            if search in str(inc.get('ID инцидента', '')).lower()
-            or search in str(inc.get('Исполнитель', '')).lower()
-        ]
-
-    if executor_filter:
-        filtered = [inc for inc in filtered if executor_filter in str(inc.get('Исполнитель', ''))]
-
-    active_tab = normalize_tab(request.args.get('tab', 'all'))
-
-    history_ids = get_all_history_ids()
-    repeated_count = sum(
-        str(inc.get('ID инцидента', '')).upper() in history_ids
-        for inc in filtered
+    prepared_incidents = _prepare_dashboard_incidents(
+        raw_incidents,
+        remembered_snapshot,
     )
-    only_repeated = request.args.get('only_repeated') == '1'
-    if only_repeated:
-        filtered = [
-            inc for inc in filtered
-            if str(inc.get('ID инцидента', '')).upper() in history_ids
-        ]
-
-    executor_values = {normalize_text(inc.get('Исполнитель')) for inc in incidents}
-    executors = sorted(value for value in executor_values if value)
-
-    ai_config = GigaChatConfig.from_env(PROJECT_ROOT)
-    ai_keys = []
-    for inc in filtered:
-        context = build_ai_context(inc, config=ai_config)
-        ai_keys.append(
-            (
-                context["incident_id"],
-                context["content_hash"],
-                context["prompt_version"],
-                context["model"],
-            )
-        )
-    ai_states = get_ai_states(ai_keys)
-
-    prepared_incidents = []
-    for inc in filtered:
-        inc_copy = inc.copy()
-        inc_copy['executor_display'] = normalize_text(inc.get('Исполнитель')) or 'Исполнитель не указан'
-        inc_copy['subject_display'] = normalize_text(inc.get('Тема инцидента')) or 'Тема не указана'
-        inc_copy['analysis'] = analyze_incident(inc)
-        incident_id = str(inc.get('ID инцидента', '')).upper()
-        inc_copy['ai_state'] = public_ai_state(ai_states.get(incident_id))
-        inc_copy['is_repeated'] = incident_id in history_ids
-        inc_copy['history'] = (
-            get_history_for_incident(incident_id)
-            if inc_copy['is_repeated']
-            else []
-        )
-        prepared_incidents.append((classify_incident(inc), inc_copy))
+    loaded_at = current_upload.get("loaded_at") or datetime.now(
+        ZoneInfo("Europe/Moscow")
+    )
+    periods = build_periods(prepared_incidents, loaded_at)
+    repeat_groups, repeated_ids = _repeat_dashboard_data(prepared_incidents)
+    metrics = build_metrics(prepared_incidents, repeated_ids)
 
     problem_counter = Counter()
-    for profile, inc_copy in prepared_incidents:
-        if profile in {'manual', 'duplicate'}:
-            for ptype in inc_copy['analysis'].get('Problem_types', []):
+    for row in prepared_incidents:
+        if row.get("profile") in {'manual', 'duplicate'}:
+            for ptype in row['analysis'].get('Problem_types', []):
                 problem_counter[ptype] += 1
     problem_stats = sorted(problem_counter.items(), key=lambda x: x[1], reverse=True) if problem_counter else []
 
-    incident_groups = {
-        "all": [inc_copy for _, inc_copy in prepared_incidents],
-        "errors": [],
-        "warnings": [],
-        "correct": [],
-        "inwork": [],
-        "skipped": [],
-    }
-    for profile, inc_copy in prepared_incidents:
-        group_key = incident_group_key(profile, inc_copy['analysis'].get('outcome'))
-        incident_groups[group_key].append(inc_copy)
+    requested_section = request.args.get("section", "").strip().casefold()
+    requested_period = request.args.get("period", "").strip()
+    valid_section = requested_section in {"repeat", "current", "period", "all"}
+    section = requested_section if valid_section else choose_default_section(repeat_groups, periods)
+    selected_period = None
+    if section == "repeat" and not repeat_groups:
+        section = choose_default_section((), periods)
+    if section == "current":
+        selected_period = periods.current
+        if selected_period is None:
+            section = "period" if periods.weeks else "all"
+    if section == "period":
+        selected_period = _period_for_key(periods, requested_period)
+        if selected_period is None:
+            selected_period = periods.weeks[0] if periods.weeks else periods.unknown
+        if selected_period is None:
+            section = "all"
 
-    dashboard_stats = {
-        "total": len(prepared_incidents),
-        "errors": len(incident_groups["errors"]),
-        "warnings": len(incident_groups["warnings"]),
-        "correct": len(incident_groups["correct"]),
-        "inwork": len(incident_groups["inwork"]),
-        "skipped": len(incident_groups["skipped"]),
-        "repeated": sum(inc_copy['is_repeated'] for _, inc_copy in prepared_incidents),
-    }
+    section_rows = prepared_incidents
+    if section in {"current", "period"} and selected_period is not None:
+        section_rows = list(selected_period.incidents)
+
+    search_query = request.args.get("search", "").strip()
+    search_mode = bool(search_query)
+    if search_mode:
+        section_rows = list(global_search(prepared_incidents, search_query))
+
+    incident_groups = build_status_groups(section_rows)
+    requested_tab = normalize_tab(request.args.get("tab"), default="")
+    active_tab = requested_tab if requested_tab else choose_default_status(incident_groups)
+    displayed_incidents = (
+        list(section_rows) if search_mode else list(incident_groups[active_tab])
+    )
+
+    period_labels = _period_label_lookup(periods)
+    for row in prepared_incidents:
+        row["period_label"] = period_labels.get(id(row), "Дата не определена")
+
+    if search_mode:
+        section_title = f"Результаты поиска · {len(displayed_incidents)}"
+        section_caption = "Поиск выполнен по всей загруженной выгрузке"
+    elif section == "repeat":
+        section_title = "Повторная проверка"
+        section_caption = "Инциденты из последних пяти уникальных недель протоколов"
+    elif section == "current" and selected_period:
+        section_title = "Текущий период"
+        section_caption = f"{selected_period.start:%d.%m.%Y %H:%M} — {selected_period.end:%d.%m.%Y %H:%M}"
+    elif section == "period" and selected_period:
+        section_title = selected_period.label
+        section_caption = "Период от пятницы 00:00 до следующей пятницы 00:00"
+    else:
+        section_title = "Все инциденты"
+        section_caption = "Полная загруженная выгрузка"
+
+    dashboard_stats = dict(metrics)
+    dashboard_stats["inwork"] = 0
+    repeated_count = metrics["repeated"]
+    incident_groups["inwork"] = []
 
     return render_template(
         'index.html',
         incident_groups=incident_groups,
+        displayed_incidents=displayed_incidents,
         dashboard_stats=dashboard_stats,
         correct=incident_groups['correct'],
         remarks=incident_groups['warnings'],
-        in_work=incident_groups['inwork'],
+        in_work=[],
         test=incident_groups['skipped'],
         repeated_count=repeated_count,
-        only_repeated=only_repeated,
+        only_repeated=False,
         active_tab=active_tab,
+        active_section=section,
+        active_period=selected_period,
+        periods=periods,
+        repeat_groups=repeat_groups,
+        search_mode=search_mode,
+        section_title=section_title,
+        section_caption=section_caption,
         problem_stats=problem_stats,
-        remembered_count=len(remembered),
-        remembered_list=remembered,
-        executors=executors,
-        current_executor=executor_filter,
+        remembered_count=len(remembered_snapshot),
+        remembered_list=remembered_snapshot,
+        upload_state=current_upload,
         current_search=search_query,
-        date_from=date_from,
-        date_to=date_to
+        current_executor="",
+        executors=[],
+        date_from="",
+        date_to="",
     )
 
 @app.route('/incident/<inc_id>')
@@ -1134,8 +1151,9 @@ def clear_memory():
 @app.route('/clear_incidents', methods=['POST'])
 @csrf_protected
 def clear_incidents():
-    global incidents
-    incidents = []
+    with _state_lock:
+        incidents.clear()
+        upload_state.update({"filename": "", "loaded_at": None})
     return redirect(url_for('index'))
 
 @app.route('/export')

@@ -11,6 +11,10 @@ from typing import Any
 
 
 TEST_STANDS = ("MAJOR-GO", "MAJOR-CHECK", "LT")
+_NEW_OBJECT_SOLUTION = re.compile(
+    r"^создан\s+инцидент\s+INC\d+\s+на\s+новом\s+объекте\.?$",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -251,9 +255,12 @@ def classify_incident(incident: Mapping[str, Any]) -> str:
     status = normalize_text(incident.get("Статус")).casefold()
     close_code = normalize_text(incident.get("Код закрытия")).casefold()
     stand_type = normalize_text(incident.get("Тип стенда")).upper()
+    solution = normalize_text(incident.get("Решение"))
 
     if status == "в работе":
         return "in_work"
+    if _NEW_OBJECT_SOLUTION.fullmatch(solution):
+        return "new_object"
     if close_code == "автовыполнение":
         return "automatic"
     if any(stand_type == marker or stand_type.startswith(f"{marker} ") for marker in TEST_STANDS):
@@ -333,15 +340,35 @@ def _derive_outcome(checks: list[dict[str, Any]], profile: str) -> str:
         for check in checks
     ):
         return "system_error"
-    if profile in {"in_work", "automatic", "test"}:
-        return "skipped"
     if any(check.get("severity") == "error" for check in checks):
         return "error"
     if any(check.get("severity") == "warning" for check in checks):
         return "warning"
+    if profile in {"in_work", "automatic", "test", "new_object"}:
+        return "skipped"
     if any(check["status"] == "remark" for check in checks):
         return "warning"
     return "passed"
+
+
+def _tks_tag_check(solution: str, tag: str) -> dict[str, Any] | None:
+    if re.search(r"\bТКС\b", solution, re.IGNORECASE) is None:
+        return None
+
+    has_tks_tag = re.search(r"\bТКС\b", tag, re.IGNORECASE) is not None
+    return make_check(
+        "TKS_TAG_REQUIRED",
+        "Тег ТКС",
+        "passed" if has_tks_tag else "remark",
+        (
+            "В решении и столбце «Тег» указан ТКС"
+            if has_tks_tag
+            else "В решении упомянут ТКС, но в столбце «Тег» отсутствует тег «ТКС»"
+        ),
+        evidence={"tag": tag, "solution_marker": "ТКС"},
+        recommendation="" if has_tks_tag else "Добавьте значение «ТКС» в столбец «Тег».",
+        severity="none" if has_tks_tag else "warning",
+    )
 
 
 def _required_check(
@@ -435,6 +462,18 @@ _REMEDIATION_SIGNAL = re.compile(
     r"(?:INC|PM|OPLOT|EMRM|INCT|C)-?\d+|(?:INC|PM|OPLOT|EMRM|INCT|C)-?\d+",
     re.IGNORECASE,
 )
+_TASK_REFERENCE = re.compile(
+    r"https?://[^\s]*(?:jira|browse|task|issue)[^\s]*|"
+    r"\b(?:задач\w*|проблем\w*|зпи)[ \t]*(?:№|#|:|-)?[ \t]*"
+    r"(?:[A-ZА-Я]{1,}[ \t-]*)?\d{2,}\b|"
+    r"\b[A-ZА-Я]{2,}-?\d{3,}\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_task_reference(solution: str) -> str:
+    match = _TASK_REFERENCE.search(solution)
+    return match.group(0).strip() if match else ""
 
 
 def _cause_checks(cause: str, category: str) -> list[dict[str, Any]]:
@@ -460,10 +499,16 @@ def _cause_checks(cause: str, category: str) -> list[dict[str, Any]]:
     return checks
 
 
-def _remediation_checks(remediation: str, close_code: str, config: AuditConfig) -> list[dict[str, Any]]:
+def _remediation_checks(
+    remediation: str,
+    close_code: str,
+    task_reference: str,
+    config: AuditConfig,
+) -> list[dict[str, Any]]:
+    remediation_present = bool(remediation or task_reference)
     checks = [
         _required_check(
-            bool(remediation),
+            remediation_present,
             "REMEDIATION_REQUIRED",
             "Способ устранения",
             "Способ устранения не указан",
@@ -471,7 +516,7 @@ def _remediation_checks(remediation: str, close_code: str, config: AuditConfig) 
         )
     ]
     if remediation:
-        weak = (
+        weak = not task_reference and (
             len(remediation.strip()) < config.minimum_remediation_chars
             or bool(_WEAK_REMEDIATION.fullmatch(remediation.strip()))
             or bool(_GENERIC_REMEDIATION_OUTCOME.fullmatch(remediation.strip()))
@@ -494,7 +539,8 @@ def _remediation_checks(remediation: str, close_code: str, config: AuditConfig) 
         )
     if close_code.casefold() == "решено обходным путём":
         describes_workaround = bool(
-            re.search(
+            task_reference
+            or re.search(
                 r"обходн|временн|переключ|резерв|альтернатив|ручн|маршрут|(?:INC|PM|OPLOT|JIRA)-?\d+",
                 remediation,
                 re.IGNORECASE,
@@ -506,7 +552,11 @@ def _remediation_checks(remediation: str, close_code: str, config: AuditConfig) 
                 "Обходной путь",
                 "passed" if describes_workaround else "remark",
                 "Обходной путь описан" if describes_workaround else "Код закрытия указывает обходной путь, но он не описан",
-                evidence={"close_code": close_code, "solution": remediation},
+                evidence={
+                    "close_code": close_code,
+                    "solution": remediation,
+                    "task_reference": task_reference,
+                },
                 recommendation=(
                     "Опишите применённый обходной путь и связанную задачу окончательного устранения."
                     if not describes_workaround
@@ -806,6 +856,7 @@ def _chronology_checks(
             "Хронология",
             "Заголовок хронологии отсутствует",
             "Добавьте раздел «Краткая хронология».",
+            missing_severity="warning",
         ),
         _required_check(
             len(substantive_events) >= config.minimum_chronology_events,
@@ -1127,13 +1178,20 @@ def audit_incident(
     parsed = parse_solution(solution)
     cause_category = normalize_text(incident.get("Причина"))
     close_code = normalize_text(incident.get("Код закрытия"))
+    tag = normalize_text(incident.get("Тег"))
+    task_reference = (
+        _extract_task_reference(solution)
+        if close_code.casefold() == "решено обходным путём"
+        else ""
+    )
     context = "\n".join(part for part in (subject, description, solution) if part)
 
-    if profile in {"in_work", "automatic", "test"}:
+    if profile in {"in_work", "automatic", "test", "new_object"}:
         labels = {
             "in_work": "Инцидент ещё находится в работе",
             "automatic": "Инцидент закрыт автоматически",
             "test": "Инцидент относится к тестовому стенду",
+            "new_object": "Создан отдельный инцидент на новом объекте",
         }
         checks = [
             make_check(
@@ -1171,7 +1229,17 @@ def audit_incident(
         checks = start_checks + end_checks
         checks.extend(_safe_check_group("Что произошло и пунктуация", lambda: _text_quality_checks(parsed)))
         checks.extend(_safe_check_group("Причина", lambda: _cause_checks(parsed.cause, cause_category)))
-        checks.extend(_safe_check_group("Способ устранения", lambda: _remediation_checks(parsed.remediation, close_code, config)))
+        checks.extend(
+            _safe_check_group(
+                "Способ устранения",
+                lambda: _remediation_checks(
+                    parsed.remediation,
+                    close_code,
+                    task_reference,
+                    config,
+                ),
+            )
+        )
         checks.extend(
             _safe_check_group(
                 "Влияние",
@@ -1199,6 +1267,10 @@ def audit_incident(
                     severity="none" if ordered else "error",
                 )
             )
+
+    tks_tag_check = _tks_tag_check(solution, tag)
+    if tks_tag_check is not None:
+        checks.append(tks_tag_check)
 
     if profile in {"manual", "duplicate"}:
         if spelling_checker is None:
@@ -1244,7 +1316,7 @@ def audit_incident(
         "Что произошло": what_happened,
         "Почему произошло": parsed.cause or "Не указано",
         "Привлечённые компетенции": " / ".join(competencies) if competencies else "Не указано",
-        "Ход устранения": parsed.remediation or "Не указано",
+        "Ход устранения": parsed.remediation or task_reference or "Не указано",
         "Дата начала": "Да" if parsed.start_text else "Нет",
         "Дата окончания": "Да" if parsed.end_text else "Нет",
         "outcome": outcome,

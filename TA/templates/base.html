@@ -3,8 +3,15 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="color-scheme" content="light">
+    <meta name="color-scheme" content="light dark">
     <title>{% block title %}Контроль инцидентов{% endblock %}</title>
+    <script>
+        (function () {
+            const saved = localStorage.getItem('incident-theme');
+            const preferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            document.documentElement.dataset.theme = saved || preferred;
+        })();
+    </script>
     <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='css/app.css') }}" rel="stylesheet">
 </head>
@@ -18,9 +25,14 @@
                     <span class="app-brand__subtitle">Аудит качества закрытия</span>
                 </span>
             </a>
-            <div class="app-header__links">
-                <a href="{{ url_for('index') }}">Инциденты</a>
-                <a href="{{ url_for('protocols_history') }}">Протоколы</a>
+            <div class="app-header__right">
+                <div class="app-header__links">
+                    <a href="{{ url_for('index') }}">Инциденты</a>
+                    <a href="{{ url_for('protocols_history') }}">Протоколы</a>
+                </div>
+                <button type="button" class="theme-toggle" data-theme-toggle aria-label="Переключить тему" aria-pressed="false">
+                    <span>Тема</span><span class="theme-toggle__track"><span class="theme-toggle__thumb"></span></span>
+                </button>
             </div>
         </nav>
     </header>
@@ -28,6 +40,7 @@
         {% block content %}{% endblock %}
     </main>
     <script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/ai-analysis.js') }}" defer></script>
     {% block scripts %}{% endblock %}
 </body>
