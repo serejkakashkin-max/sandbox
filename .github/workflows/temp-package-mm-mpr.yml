@@ -1,0 +1,78 @@
+name: TEMP Package MM MPR deployment
+
+on:
+  push:
+    branches:
+      - migration/package-mm-mpr-20260909
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build exact deployment ZIP
+        shell: python
+        env:
+          BASE: 3bf3378e65e61a6e824b0e48f86b529af1093b51
+          TARGET: f5749e54b01da5500b4c12b7fa44ea0ce23b723a
+          ZIP_NAME: Sandbox_MM_MPR_deploy_20260909.zip
+        run: |
+          import os, shutil, subprocess, zipfile
+          from pathlib import Path
+
+          base = os.environ['BASE']
+          target = os.environ['TARGET']
+          zip_name = os.environ['ZIP_NAME']
+          out = Path('deployment_out')
+          stage = out / 'stage'
+          shutil.rmtree(out, ignore_errors=True)
+          stage.mkdir(parents=True)
+
+          def names(diff_filter):
+              raw = subprocess.check_output(['git','diff','--name-only','-z',f'--diff-filter={diff_filter}',base,target])
+              return [item.decode('utf-8','surrogateescape') for item in raw.split(b'\0') if item]
+
+          changed = sorted(set(names('ACMRTUXB')))
+          deleted = sorted(set(names('D')))
+          copied = []
+          for rel in changed:
+              data = subprocess.check_output(['git','show',f'{target}:{rel}'])
+              dest = stage / rel
+              dest.parent.mkdir(parents=True, exist_ok=True)
+              dest.write_bytes(data)
+              copied.append(rel)
+
+          (stage/'CHANGED_FILES.txt').write_text('\n'.join(copied) + ('\n' if copied else ''), encoding='utf-8')
+          (stage/'DELETE_ON_STAND.txt').write_text('\n'.join(deleted) + ('\n' if deleted else ''), encoding='utf-8')
+          (stage/'DEPLOY_README.txt').write_text(
+              'Sandbox / MM — перенос генератора МПР\n\n'
+              f'BASE={base}\nTARGET={target}\n'
+              f'ADD_OR_REPLACE={len(copied)}\nDELETE={len(deleted)}\n\n'
+              'Распаковать в корень репозитория Sandbox с сохранением путей.\n'
+              'Удалить файлы из DELETE_ON_STAND.txt (если список не пуст).\n'
+              'После обновления перезапустить приложение и проверить /mm/mpr/.\n',
+              encoding='utf-8'
+          )
+          zip_path = out / zip_name
+          with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
+              for path in sorted(stage.rglob('*')):
+                  if path.is_file():
+                      zf.write(path, path.relative_to(stage).as_posix())
+          print(f'ZIP={zip_path}')
+          print(f'CHANGED={len(copied)} DELETED={len(deleted)}')
+
+      - name: Upload deployment ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: sandbox-mm-mpr-deploy
+          path: deployment_out/Sandbox_MM_MPR_deploy_20260909.zip
+          retention-days: 7
+          if-no-files-found: error
