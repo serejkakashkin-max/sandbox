@@ -8,6 +8,7 @@ from werkzeug.middleware.dispatcher import DispatcherMiddleware
 
 from GD.web_app import app as gd_application
 from GD.web_app import start_scheduler as start_gd_scheduler
+from MM import create_app as create_mm_app
 from sandbox_app import PublicPrefixMiddleware, create_app
 
 
@@ -45,6 +46,7 @@ ta_app_module = _load_ta_app_module()
 ta_application = ta_app_module.app
 ca_app_package = _load_ca_app_package()
 ca_application = ca_app_package.create_app()
+mm_application = create_mm_app()
 root_application = create_app()
 start_gd_scheduler()
 
@@ -55,6 +57,7 @@ application = PublicPrefixMiddleware(
             "/ta/incident-auditor": ta_application,
             "/gd/release-monitor": gd_application,
             "/ca/zpi-assistant": ca_application,
+            "/mm/mpr": mm_application,
         },
     )
 )
