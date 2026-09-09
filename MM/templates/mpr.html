@@ -1,24 +1,29 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>МПР — Sandbox</title>
+  <meta name="color-scheme" content="dark">
+  <title>МПР — Oplot</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='mpr.css') }}">
 </head>
-<body>
+<body class="oplot-mpr">
+<header class="mpr-topbar">
+  <a class="mpr-brand" href="{{ sandbox_root_url }}" aria-label="Вернуться в Sandbox">OPLOT</a>
+</header>
+
 <main class="mpr-page" id="oplotMprRoot">
   <script type="application/json" id="oplot-mpr-config">{{ mpr_ui_config | tojson }}</script>
 
-  <nav class="mpr-topbar" aria-label="Навигация">
-    <a class="mpr-back" href="{{ sandbox_root_url }}">← Песочница</a>
-    <span class="mpr-owner">MM - Мухиддинов Ману</span>
-  </nav>
-
   <header class="mpr-hero">
-    <div class="mpr-hero__icon" aria-hidden="true">▤</div>
+    <div class="mpr-hero__icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" role="img">
+        <path d="M7 3.5h7l4 4V20.5H7z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+        <path d="M14 3.5v4h4M10 12h5M10 15h5M10 18h3.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+      </svg>
+    </div>
     <div>
-      <div class="mpr-eyebrow">Экспериментальный инструмент · генерация документов</div>
+      <div class="mpr-eyebrow">Генерация документов</div>
       <h1>МПР</h1>
       <p>Подготовка планов работ по выгрузкам лимитов XLSX и CSV.</p>
     </div>
@@ -34,26 +39,26 @@
     </div>
 
     <div class="mpr-grid">
-      <section class="mpr-panel" aria-labelledby="mpr-template-title">
+      <section class="mpr-panel mpr-panel--template" aria-labelledby="mpr-template-title">
         <div class="mpr-panel__heading">
           <span class="mpr-number">1</span>
           <div>
             <h2 id="mpr-template-title">Шаблон документа</h2>
-            <p>Используется разрешённый шаблон из каталога МПР.</p>
+            <p>Используется только разрешённый шаблон из каталога МПР.</p>
           </div>
         </div>
         <div class="mpr-template-list" id="mprTemplateList">
           {% if templates|length == 1 %}
             {% set item = templates[0] %}
             <div class="mpr-template is-active is-readonly" data-template-code="{{ item.code }}" data-template-name="{{ item.name }}">
-              <span class="mpr-template__mark">DOCX</span>
+              <span class="mpr-template__mark" aria-hidden="true">DOCX</span>
               <span><strong>{{ item.name }}</strong><small>{{ item.filename }}</small></span>
               <span class="mpr-ready">Готов</span>
             </div>
           {% elif templates %}
             {% for item in templates %}
               <button class="mpr-template{% if loop.first %} is-active{% endif %}" type="button" data-template-code="{{ item.code }}" data-template-name="{{ item.name }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">
-                <span class="mpr-template__mark">DOCX</span>
+                <span class="mpr-template__mark" aria-hidden="true">DOCX</span>
                 <span><strong>{{ item.name }}</strong><small>{{ item.filename }}</small></span>
               </button>
             {% endfor %}
@@ -64,7 +69,7 @@
         <input id="mprTemplateCode" name="template_code" type="hidden" value="{{ mpr_ui_config.initial_template_code }}">
       </section>
 
-      <section class="mpr-panel" aria-labelledby="mpr-upload-title">
+      <section class="mpr-panel mpr-panel--upload" aria-labelledby="mpr-upload-title">
         <div class="mpr-panel__heading">
           <span class="mpr-number">2</span>
           <div>
@@ -84,7 +89,7 @@
     <div class="mpr-alert" id="mprAlert" role="alert" hidden></div>
     <div class="mpr-actions">
       <div class="mpr-status" id="mprStatus" role="status" aria-live="polite"></div>
-      <button class="btn btn-primary" id="mprGenerateBtn" type="button" {% if not templates %}disabled{% endif %}>Проверить данные</button>
+      <button class="btn btn-primary mpr-primary-action" id="mprGenerateBtn" type="button" {% if not templates %}disabled{% endif %}>Проверить данные</button>
     </div>
   </section>
 
