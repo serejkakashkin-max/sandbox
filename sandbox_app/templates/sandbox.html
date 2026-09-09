@@ -152,7 +152,7 @@
             <div>
                 <div class="module-top">
                     <div>
-                        <div class="module-owner">{{ module.owner_code }} · {{ module.owner_name }}</div>
+                        <div class="module-owner">{% if module.owner_label is defined %}{{ module.owner_label }}{% else %}{{ module.owner_code }} · {{ module.owner_name }}{% endif %}</div>
                         <h2 class="module-title">{{ module.title }}</h2>
                     </div>
                     <span class="badge">{{ module.status }}</span>

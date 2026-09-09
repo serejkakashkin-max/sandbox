@@ -10,6 +10,7 @@ on:
       - wsgi.py
       - sandbox_app/**
       - CA/**
+      - MM/**
       - .github/workflows/runtime-integrity.yml
   workflow_dispatch:
 
@@ -36,6 +37,9 @@ jobs:
 
       - name: Smoke-check all Sandbox modules
         run: uv run python scripts/smoke_check.py
+
+      - name: Test MM MPR regression suite
+        run: uv run python -m unittest discover -s MM/tests -p "test_*.py"
 
       - name: Test CA regression suite
         working-directory: CA

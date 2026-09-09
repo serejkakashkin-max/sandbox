@@ -30,6 +30,7 @@ def create_app() -> Flask:
         ta_module_url = _join_public_path(request.script_root, "/ta/incident-auditor")
         gd_module_url = _join_public_path(request.script_root, "/gd/release-monitor")
         ca_module_url = _join_public_path(request.script_root, "/ca/zpi-assistant")
+        mm_module_url = _join_public_path(request.script_root, "/mm/mpr")
         modules: list[dict[str, Any]] = [
             {
                 "owner_code": "TA",
@@ -54,6 +55,15 @@ def create_app() -> Flask:
                 "description": "Сценарный разбор пользовательских логов и подготовка заявки на смежную систему",
                 "status": "EXPERIMENTAL",
                 "url": ca_module_url,
+            },
+            {
+                "owner_code": "MM",
+                "owner_name": "Мухиддинов Ману",
+                "owner_label": "MM - Мухиддинов Ману",
+                "title": "Генератор МПР",
+                "description": "Подготовка комплектов МПР по выгрузкам лимитов XLSX и CSV",
+                "status": "EXPERIMENTAL",
+                "url": mm_module_url,
             },
         ]
         parent_url = os.getenv("SANDBOX_PARENT_URL", "/").strip() or "/"

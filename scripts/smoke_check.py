@@ -15,6 +15,7 @@ os.chdir(REPO_ROOT)
 
 REQUIRED_IMPORTS = (
     "apscheduler",
+    "docx",
     "flask",
     "gigachat",
     "httpcore",
@@ -33,6 +34,8 @@ REQUIRED_FILES = (
     "TA/static/js/ai-analysis.js",
     "GD/templates/main_app.html",
     "CA/zpi_app/templates/base.html",
+    "MM/templates/mpr.html",
+    "MM/doc_templates_MPR/os_update/template.docx",
 )
 
 SMOKE_ROUTES = (
@@ -43,6 +46,8 @@ SMOKE_ROUTES = (
     "/gd/release-monitor/health",
     "/ca/zpi-assistant/",
     "/ca/zpi-assistant/health",
+    "/mm/mpr/",
+    "/mm/mpr/health",
 )
 
 
@@ -66,7 +71,7 @@ def main() -> None:
     if failures:
         raise SystemExit("Sandbox smoke check failed: " + "; ".join(failures))
 
-    print("Sandbox smoke check passed for root, TA, GD and CA.")
+    print("Sandbox smoke check passed for root, TA, GD, CA and MM.")
 
 
 if __name__ == "__main__":
